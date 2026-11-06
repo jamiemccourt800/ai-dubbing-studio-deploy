@@ -51,6 +51,10 @@ Every pull request is checked by the **Validate** workflow: each overlay must
 render, and what it renders must be valid Kubernetes
 ([kubeconform](https://github.com/yannh/kubeconform)). The README is linted too.
 
+`main` is protected (`.github/ruleset-main.json`, active on GitHub): every
+change is a pull request with one approval, both checks must pass, and `main`
+can't be deleted or force-pushed. Nobody can skip these rules.
+
 ## Set up a cluster
 
 Once per cluster, before the first deploy:
