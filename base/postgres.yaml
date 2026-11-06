@@ -1,0 +1,65 @@
+# PostgreSQL (ADR-0002): one instance per environment, with its data on a
+# persistent volume. The password comes from the "postgres" Secret, which is
+# created on the cluster by hand and never kept in Git (see README).
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels: { app: postgres }
+spec:
+  selector: { app: postgres }
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels: { app: postgres }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      # Don't add Kubernetes' automatic <SERVICE>_PORT variables: a Service called
+      # "livekit" would set LIVEKIT_PORT, which LiveKit reads as its own setting.
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          # Same version as Docker Compose in the app repo.
+          image: postgres:18-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: dubbing
+            - name: POSTGRES_DB
+              value: dubbing
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgres, key: password }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "dubbing", "-d", "dubbing"]
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+  # K3s's built-in "local-path" storage keeps the data on the node's disk.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

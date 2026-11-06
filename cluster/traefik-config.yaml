@@ -1,0 +1,18 @@
+# Cluster-wide setting for K3s's built-in Traefik (the ingress), applied once per
+# cluster, not per environment.
+#
+# By default K3s's load balancer replaces each visitor's address with an address
+# inside the cluster (10.42.0.1), so the API would see every visitor as the same
+# client and put them all in one login rate-limit bucket (ADR-0003). With
+# externalTrafficPolicy: Local, Traefik sees the real address and passes it on in
+# X-Forwarded-For. On a one-node cluster this has no downside.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        externalTrafficPolicy: Local

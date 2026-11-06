@@ -1,0 +1,11 @@
+# For trying the manifests on your own machine with k3d (see README). Uses an
+# API image you built and imported yourself, instead of one from Docker Hub.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ads-local
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: ai-dubbing-studio-api
+    newTag: local
