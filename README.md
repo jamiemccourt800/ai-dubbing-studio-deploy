@@ -47,6 +47,10 @@ To see exactly what an overlay creates, without a cluster:
 kubectl kustomize overlays/test
 ```
 
+Every pull request is checked by the **Validate** workflow: each overlay must
+render, and what it renders must be valid Kubernetes
+([kubeconform](https://github.com/yannh/kubeconform)). The README is linted too.
+
 ## Set up a cluster
 
 Once per cluster, before the first deploy:
