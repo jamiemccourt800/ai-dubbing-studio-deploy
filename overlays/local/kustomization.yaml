@@ -9,3 +9,10 @@ resources:
 images:
   - name: ai-dubbing-studio-api
     newTag: local
+patches:
+  # The rule that refuses /internal, in this namespace.
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-local-deny-all@kubernetescrd

@@ -11,15 +11,21 @@ images:
     newName: glossia/ai-dubbing-studio-api
     newTag: testing
 patches:
-  # The address browsers use for the test environment. Change both lines when
-  # the public endpoint is set up (YGP-53).
+  # The address browsers use for the test environment, through the Cloudflare
+  # Tunnel (YGP-92). Cloudflare serves it over HTTPS.
   - target: { kind: ConfigMap, name: api-config }
     patch: |
       - op: replace
         path: /data/BETTER_AUTH_URL
-        value: http://ads-test.localhost
-  - target: { kind: Ingress, name: api }
+        value: https://test.glossia.ie
+  # Both Ingresses: the app, and the rule that refuses /internal.
+  - target: { kind: Ingress, name: "api(-internal)?" }
     patch: |
       - op: replace
         path: /spec/rules/0/host
-        value: ads-test.localhost
+        value: test.glossia.ie
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-test-deny-all@kubernetescrd

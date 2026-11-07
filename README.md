@@ -18,7 +18,7 @@ releases. **No secrets are kept here**; they're created on the cluster by hand
 
 ```text
 base/                  what every environment runs
-  api.yaml             the Hono API with the built app, its Service and Ingress
+  api.yaml             the Hono API with the built app, its Service and Ingresses
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
 overlays/
@@ -27,16 +27,18 @@ overlays/
   local/               namespace ads-local, an image you built, for trying it with k3d
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
+  cloudflared.yaml     once per cluster: the Cloudflare Tunnel, the public endpoint
 ```
 
 | Overlay | Namespace | API image | Host name | LiveKit media ports |
 |---|---|---|---|---|
-| test | `ads-test` | `glossia/ai-dubbing-studio-api:testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
-| prod | `ads-prod` | `glossia/ai-dubbing-studio-api:prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
+| test | `ads-test` | `glossia/ai-dubbing-studio-api:testing` | `test.glossia.ie` | 7881 TCP, 7882 UDP |
+| prod | `ads-prod` | `glossia/ai-dubbing-studio-api:prod` | `glossia.ie` | 7891 TCP, 7892 UDP |
 | local | `ads-local` | `ai-dubbing-studio-api:local` | `ads.localhost` | 7881 TCP, 7882 UDP |
 
-The host names are placeholders until the public endpoint exists (YGP-53). Each
-overlay sets its host in two places: `BETTER_AUTH_URL` and the Ingress.
+Each overlay sets its host in `BETTER_AUTH_URL` and in both Ingresses. Test and
+prod are public through the Cloudflare Tunnel (see
+[Public endpoint](#public-endpoint-cloudflare-tunnel)).
 
 Not here yet: Redis and the translation worker pool (ADR-0018). They come with
 the translator work in the app repository.
@@ -59,16 +61,20 @@ can't be deleted or force-pushed. Nobody can skip these rules.
 
 Once per cluster, before the first deploy:
 
-1. **Keep visitors' real addresses.** By default K3s's load balancer replaces
-   them with `10.42.0.1`, so the API would put every visitor in one login
-   rate-limit bucket. `cluster/traefik-config.yaml` tells K3s's Traefik to keep
-   them (`externalTrafficPolicy: Local`):
+1. **Keep visitors' real addresses.** Otherwise the API would put every
+   visitor in one login rate-limit bucket. `cluster/traefik-config.yaml` tells
+   K3s's Traefik to keep them: `externalTrafficPolicy: Local` for requests from
+   the LAN, which K3s's load balancer would otherwise change to `10.42.0.1`, and
+   trusting `X-Forwarded-For` from the pod network for requests through the
+   tunnel:
 
     ```bash
     kubectl apply -f cluster/traefik-config.yaml
     ```
 
 2. **Create each environment's Secrets** (next section).
+3. **Open the public endpoint** (see
+   [Public endpoint](#public-endpoint-cloudflare-tunnel)).
 
 ## Secrets
 
@@ -89,7 +95,58 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
 | `livekit` | `api-key`, `api-secret` | LiveKit, and the API (rooms and tokens) |
 | `api` | `better-auth-secret` | The API's login cookies. Changing it logs every host out. |
 
+## Public endpoint (Cloudflare Tunnel)
+
+`cluster/cloudflared.yaml` runs two cloudflared pods, on different nodes, that
+keep a tunnel open from the cluster to Cloudflare. Visitors reach `glossia.ie`
+and `test.glossia.ie` at Cloudflare. Cloudflare serves HTTPS with its own
+certificate and renews it, and the tunnel carries every request (WebSockets
+too) to Traefik, which sends each host name to its environment. No port is
+opened on the VMs or the router for this.
+
+Set it up once, from a machine with kubectl access (the relay):
+
+```bash
+# cloudflared, from Cloudflare's apt repository
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install -y cloudflared
+
+cloudflared tunnel login                 # opens a link: choose glossia.ie
+cloudflared tunnel create glossia
+cloudflared tunnel route dns glossia glossia.ie
+cloudflared tunnel route dns glossia test.glossia.ie
+
+# The tunnel's token is the only secret: it goes in the cluster, not in Git
+kubectl create namespace cloudflared
+kubectl -n cloudflared create secret generic tunnel --from-literal=token="$(cloudflared tunnel token glossia)"
+kubectl apply -f cluster/cloudflared.yaml
+kubectl -n cloudflared get pods          # both Running and 1/1
+```
+
+`route dns` creates a CNAME record for each name, pointing at the tunnel. It
+fails if the name already has a DNS record; delete that record first. Create the
+tunnel with the CLI as above, not in the Cloudflare dashboard. A dashboard
+tunnel ignores the routes in `cluster/cloudflared.yaml` and takes them from the
+dashboard instead.
+
+In the Cloudflare dashboard, under **SSL/TLS → Edge Certificates**, turn on
+**Always Use HTTPS**, so plain HTTP is redirected to HTTPS.
+
+A new environment needs only its DNS record (`cloudflared tunnel route dns
+glossia <host>`) and its host name in its overlay. The tunnel sends every name
+to Traefik.
+
+LiveKit's media (UDP and TCP on 7881/7882 and 7891/7892) can't go through the
+tunnel, which carries only HTTP. It's set up with LiveKit (YGP-68).
+
 ## Things to know
+
+- **`/internal` is refused by Traefik** with 403, on every host. It's only for
+  the translator workers, which call the API inside the cluster (`http://api`).
+  The `api-internal` Ingress and the `deny-all` Middleware in `base/api.yaml` do
+  this. Traefik matches the path as a plain prefix, so paths such as `/internalx`
+  are refused too.
 
 - **Automatic service variables are off** (`enableServiceLinks: false`) in every
   pod. Kubernetes would otherwise add `<SERVICE>_PORT` variables, and a Service
