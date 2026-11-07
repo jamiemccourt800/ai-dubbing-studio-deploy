@@ -1,0 +1,99 @@
+# The Hono API with the built PWA (ADR-0007, ADR-0012), from the app repo's
+# apps/api/Dockerfile. The overlays set the image tag, the public address and
+# the host name.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  # The address browsers use; each overlay sets its own.
+  BETTER_AUTH_URL: http://ads.localhost
+  # K3s's pod network: Traefik (the ingress) reaches the API from here, so its
+  # X-Forwarded-For header is believed and each visitor gets their own login
+  # rate limit, instead of everyone sharing Traefik's address.
+  TRUSTED_PROXIES: 10.42.0.0/16
+  LIVEKIT_URL: ws://livekit:7880
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  labels: { app: api }
+spec:
+  selector: { app: api }
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels: { app: api }
+spec:
+  # One copy for now. More would work (logins, rate limits and migrations are
+  # safe with several), once there is load to share.
+  replicas: 1
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      # Don't add Kubernetes' automatic <SERVICE>_PORT variables: a Service called
+      # "livekit" would set LIVEKIT_PORT, which LiveKit reads as its own setting.
+      enableServiceLinks: false
+      containers:
+        - name: api
+          # The overlays replace the tag (testing, prod, or a local build).
+          image: ai-dubbing-studio-api
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef: { name: api-config }
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: postgres, key: password }
+            - name: DATABASE_URL
+              value: postgres://dubbing:$(POSTGRES_PASSWORD)@postgres:5432/dubbing
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef: { name: api, key: better-auth-secret }
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef: { name: livekit, key: api-key }
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef: { name: livekit, key: api-secret }
+          # /health: the process is up. /ready: it can also reach Postgres.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            # Argon2id uses 64 MiB per login (ADR-0003), so leave room for a few at once.
+            limits: { memory: 768Mi }
+---
+# Traefik, K3s's built-in ingress, sends the environment's host name to the API.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+spec:
+  rules:
+    - host: ads.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port: { name: http }
