@@ -27,6 +27,7 @@ overlays/
   local/               namespace ads-local, an image you built, for trying it with k3d
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
+ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
 | Overlay | Namespace | API image | Host name | LiveKit media ports |
@@ -56,6 +57,10 @@ change is a pull request with one approval, both checks must pass, and `main`
 can't be deleted or force-pushed. Nobody can skip these rules.
 
 ## Set up a cluster
+
+The cluster itself, three servers and three agents on the LAN, is built with
+Ansible: see [ansible/README.md](ansible/README.md). It also saves the
+kubeconfig the commands below use.
 
 Once per cluster, before the first deploy:
 
