@@ -17,6 +17,15 @@
           k3s_servers has {{ groups['k3s_servers'] | default([]) | length }}
           hosts. Use 1, 3 or 5.
 
+    - name: Host names must be valid Kubernetes node names
+      ansible.builtin.assert:
+        that: item is match('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+        fail_msg: >-
+          {{ item }} becomes a node name, which may only have lowercase
+          letters, digits and "-".
+        quiet: true
+      loop: "{{ groups['k3s_servers'] + groups['k3s_agents'] | default([]) }}"
+
 - name: Prepare every node
   hosts: k3s_servers:k3s_agents
   become: true

@@ -17,7 +17,7 @@ k3s_extra_tls_sans: []
 # The LAN. When ufw is active on a node, only this network may reach the
 # cluster's own ports (API, etcd, kubelet, flannel). Web and LiveKit media
 # ports are opened to everyone.
-k3s_lan_cidr: 192.168.0.0/16
+k3s_lan_cidr: 10.108.152.0/21
 
 # Ports that visitors reach: Traefik, and LiveKit's media ports for test and
 # prod (see the overlays).

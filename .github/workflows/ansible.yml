@@ -23,8 +23,5 @@ jobs:
           python-version: "3.13"
       - run: pip install ansible ansible-lint
       - run: ansible-galaxy collection install -r requirements.yml
-      - name: Syntax check
-        run: |
-          cp inventory/hosts.example.yml inventory/hosts.yml
-          ansible-playbook --syntax-check site.yml remove.yml
+      - run: ansible-playbook --syntax-check site.yml remove.yml
       - run: ansible-lint --profile production site.yml remove.yml

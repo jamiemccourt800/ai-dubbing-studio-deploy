@@ -24,13 +24,15 @@ starts the cluster, and the others join it.
 
 ```bash
 cd ansible
-cp inventory/hosts.example.yml inventory/hosts.yml   # then put in your VMs
 ansible-playbook site.yml
 ```
 
-`inventory/hosts.yml` is git-ignored. Each VM's `ansible_host` must be its LAN
-address, because the other VMs use it to reach the cluster. Use 1, 3 or 5
-servers; the playbook refuses an even number.
+The VMs are listed in `inventory/hosts.yml`: three servers
+(`ads-server-a` to `-c`) and three agents (`ads-agent-1` to `-3`) on
+10.108.152.0/21. Each VM's `ansible_host` must be its LAN address, because the
+other VMs use it to reach the cluster. Names become Kubernetes node names, so
+they may only have lowercase letters, digits and `-`. Use 1, 3 or 5 servers;
+the playbook refuses an even number, and it also refuses invalid names.
 
 The playbook:
 
@@ -56,7 +58,8 @@ they are, and the run reports no changes.
 
 ## Add a VM
 
-Add it to `k3s_servers` or `k3s_agents` in `inventory/hosts.yml`, then:
+Add it to `k3s_servers` or `k3s_agents` in `inventory/hosts.yml` through a pull
+request, then:
 
 ```bash
 ansible-playbook site.yml --limit ads-agent-2
@@ -89,7 +92,7 @@ All in `group_vars/all.yml`. Any of them can be set per VM in the inventory.
 | `k3s_api_endpoint` | the first server's `ansible_host` | Where nodes join and kubectl connects |
 | `k3s_node_ip` | the address on the VM's default route | The address K3s uses for the node |
 | `k3s_extra_tls_sans` | none | Extra names for the API certificate, such as a DNS name |
-| `k3s_lan_cidr` | `192.168.0.0/16` | The LAN, which ufw lets reach the cluster's own ports |
+| `k3s_lan_cidr` | `10.108.152.0/21` | The LAN, which ufw lets reach the cluster's own ports |
 | `k3s_public_ports` | 80, 443, LiveKit 7881/7882/7891/7892 | Ports opened to everyone |
 
 New VMs join through `k3s_api_endpoint`, so the first server must be up when
