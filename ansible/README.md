@@ -4,9 +4,9 @@ These playbooks turn Ubuntu VMs on the LAN into one K3s cluster, and add or
 remove VMs later. Each VM is either a **server** (control plane, with an etcd
 member on it) or an **agent** (a worker).
 
-With three servers the cluster survives losing one: etcd still has a majority,
-and the API answers from the other two. The first server in the inventory
-starts the cluster, and the others join it.
+With three servers the cluster survives losing any one of them: etcd still has
+a majority, kubectl reaches one of the other two, and the playbooks keep
+working. No server is special once the cluster exists.
 
 ## What you need
 
@@ -38,23 +38,48 @@ The playbook:
 
 1. installs curl and the K3s installer on every VM, and opens the firewall
    if ufw is already on (see [Firewall](#firewall));
-2. sets up the servers **one at a time**: the first one starts the cluster
-   (`cluster-init`), and each of the others joins it and waits until it is
-   `Ready` before the next one starts;
-3. joins the agents and waits until each one is `Ready`;
-4. saves an admin kubeconfig as `ansible/kubeconfig` (git-ignored), pointed at
-   the first server:
+2. sets up the servers **one at a time**, each waiting until it is `Ready`
+   before the next one starts. A new server joins through the first other
+   server that answers on port 6443. Only when none answers does
+   `ads-server-a`, the first in the inventory, start a new cluster
+   (`cluster-init`); any other server stops with an error instead, so a
+   second cluster is never started by accident;
+3. joins the agents the same way, and waits until each one is `Ready`;
+4. saves an admin kubeconfig as `ansible/kubeconfig` (git-ignored), taken from
+   the first server it can reach and pointed at `k3s.ads.lan` (see
+   [kubectl](#kubectl)).
 
-    ```bash
-    export KUBECONFIG=$PWD/kubeconfig
-    kubectl get nodes
-    ```
-
-The join token is read from the first server whenever it's needed, so it is
+The join token is read from a running server whenever it's needed, so it is
 never stored in Git. Each node is named after its inventory name.
 
-Running the playbook again is safe: nodes that are already set up are left as
-they are, and the run reports no changes.
+Running the playbook again is safe: nodes that are already in the cluster keep
+the settings they joined with, and the run reports no changes on them.
+
+## kubectl
+
+The kubeconfig points at one name, `k3s.ads.lan`, that must resolve to **all
+three servers**. kubectl tries the addresses in turn, so when a server is down
+it moves on to the next one, with no virtual IP and nothing to switch by hand.
+The API certificate accepts that name.
+
+Add these lines to `/etc/hosts` on the machine you run kubectl from (in WSL,
+the WSL distribution's `/etc/hosts`), once:
+
+```text
+10.108.159.43 k3s.ads.lan
+10.108.153.26 k3s.ads.lan
+10.108.159.83 k3s.ads.lan
+```
+
+Then:
+
+```bash
+export KUBECONFIG=$PWD/kubeconfig
+kubectl get nodes
+```
+
+The name can be changed with `k3s_api_name`. A DNS name with the three
+addresses as A records works the same way.
 
 ## Add a VM
 
@@ -62,20 +87,25 @@ Add it to `k3s_servers` or `k3s_agents` in `inventory/hosts.yml` through a pull
 request, then:
 
 ```bash
-ansible-playbook site.yml --limit ads-agent-2
+ansible-playbook site.yml --limit ads-agent-4
 ```
 
-Keep the number of servers odd.
+Any one server being down doesn't matter; the VM joins through another. Keep
+the number of servers odd.
 
 ## Remove a VM
 
 ```bash
-ansible-playbook remove.yml --limit ads-agent-2
+ansible-playbook remove.yml --limit ads-agent-3
 ```
 
-This deletes the node from the cluster (which also takes a server out of
-etcd), then uninstalls K3s from the VM. Without `--limit` the playbook stops,
-unless you pass `-e remove_all=true` to uninstall K3s from every VM.
+This deletes the node from the cluster through another server that is up
+(which also takes a server out of etcd), then uninstalls K3s from the VM.
+Without `--limit` the playbook stops, unless you pass `-e remove_all=true` to
+uninstall K3s from every VM.
+
+To rebuild a VM, remove it, reinstall it, and run `site.yml --limit` for it: it
+joins the existing cluster again, including `ads-server-a`.
 
 ## Upgrade K3s
 
@@ -89,15 +119,11 @@ All in `group_vars/all.yml`. Any of them can be set per VM in the inventory.
 | Setting | Default | What it is |
 |---|---|---|
 | `k3s_version` | `v1.37.2+k3s1` | The K3s release |
-| `k3s_api_endpoint` | the first server's `ansible_host` | Where nodes join and kubectl connects |
+| `k3s_api_name` | `k3s.ads.lan` | The name in the kubeconfig, resolving to every server |
 | `k3s_node_ip` | the address on the VM's default route | The address K3s uses for the node |
-| `k3s_extra_tls_sans` | none | Extra names for the API certificate, such as a DNS name |
+| `k3s_extra_tls_sans` | none | Extra names for the API certificate |
 | `k3s_lan_cidr` | `10.108.152.0/21` | The LAN, which ufw lets reach the cluster's own ports |
 | `k3s_public_ports` | 80, 443, LiveKit 7881/7882/7891/7892 | Ports opened to everyone |
-
-New VMs join through `k3s_api_endpoint`, so the first server must be up when
-you add one. Nodes already in the cluster keep working without it: they know
-every server.
 
 ## Firewall
 
@@ -116,15 +142,19 @@ ufw is already active on a VM, it adds:
 
 ## How it was tested
 
-On four Docker containers running Ubuntu 24.04 with systemd (three servers,
-one agent):
+On Docker containers running Ubuntu 24.04 with systemd (three servers, two
+agents), with kubectl on a Linux machine whose hosts file maps `k3s.ads.lan`
+to the three servers:
 
-- the cluster came up with all four nodes `Ready`, and a second run changed
-  nothing;
-- with the first server stopped, the API still accepted changes through
-  another server;
+- the cluster came up with every node `Ready`, and a second run changed
+  nothing on the nodes;
+- with `ads-server-a` stopped, kubectl through `k3s.ads.lan` still listed and
+  created resources, a new agent joined through `ads-server-b`, and rerunning
+  the other nodes changed nothing;
+- `ads-server-a` was removed and set up again, and it joined the existing
+  cluster (its workloads were still there) instead of starting a new one;
 - `remove.yml` took out a server and an agent, and `site.yml --limit` added
   them back;
 - with ufw active, the rules above were added and the agent stayed `Ready`.
 
-Not tested yet on the real VMs.
+Not tested yet: the real VMs, and kubectl on Windows itself.

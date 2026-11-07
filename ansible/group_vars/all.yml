@@ -4,14 +4,16 @@
 # server at a time.
 k3s_version: v1.37.2+k3s1
 
-# Where nodes join and kubectl connects: the first server, by default.
-k3s_api_endpoint: "{{ hostvars[groups['k3s_servers'][0]]['ansible_host'] | default(groups['k3s_servers'][0]) }}"
+# The name kubectl connects to. Make it resolve to every server's address
+# (hosts file or DNS, see README): kubectl tries them in turn, so it keeps
+# working while a server is down.
+k3s_api_name: k3s.ads.lan
 
 # The address K3s uses for this node: the one on its default route.
 k3s_node_ip: "{{ ansible_facts['default_ipv4']['address'] }}"
 
 # Extra names or addresses the API certificate accepts, for example a DNS name.
-# The endpoint and every server's address are always included.
+# k3s_api_name and every server's address are always included.
 k3s_extra_tls_sans: []
 
 # The LAN. When ufw is active on a node, only this network may reach the

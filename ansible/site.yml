@@ -1,13 +1,14 @@
 # Turns the VMs in the inventory into one K3s cluster, or adds new ones to it.
-# Safe to rerun: nodes that are already set up are left as they are.
+# Safe to rerun: nodes that are already set up are left as they are. No single
+# server has to be up: nodes join through whichever one answers.
 #
 #   ansible-playbook site.yml
-#   ansible-playbook site.yml --limit ads-agent-2     # only add a new VM
+#   ansible-playbook site.yml --limit ads-agent-4     # only add a new VM
 ---
-- name: Check the inventory
-  hosts: localhost
-  gather_facts: false
-  tasks:
+- name: Prepare every node
+  hosts: k3s_servers:k3s_agents
+  become: true
+  pre_tasks:
     - name: Servers must be an odd number, so etcd keeps a majority
       ansible.builtin.assert:
         that:
@@ -16,6 +17,7 @@
         fail_msg: >-
           k3s_servers has {{ groups['k3s_servers'] | default([]) | length }}
           hosts. Use 1, 3 or 5.
+      run_once: true
 
     - name: Host names must be valid Kubernetes node names
       ansible.builtin.assert:
@@ -25,15 +27,12 @@
           letters, digits and "-".
         quiet: true
       loop: "{{ groups['k3s_servers'] + groups['k3s_agents'] | default([]) }}"
-
-- name: Prepare every node
-  hosts: k3s_servers:k3s_agents
-  become: true
+      run_once: true
   roles:
     - prereq
 
 # One at a time: each new server must be a full etcd member before the next
-# joins. The first one in the inventory starts the cluster.
+# joins.
 - name: Set up the servers
   hosts: k3s_servers
   become: true
@@ -47,21 +46,25 @@
   roles:
     - k3s_agent
 
+# From the first server that is reachable. The kubeconfig points at
+# k3s_api_name, which resolves to every server (see README).
 - name: Save a kubeconfig on this machine
-  hosts: k3s_servers[0]
+  hosts: k3s_servers
   become: true
   tasks:
     - name: Fetch the admin kubeconfig
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
       register: k3s_admin_kubeconfig
+      run_once: true
 
-    - name: Write it, pointed at the cluster instead of localhost
+    - name: Write it, pointed at the cluster's name instead of localhost
       ansible.builtin.copy:
         content: >-
           {{ k3s_admin_kubeconfig.content | b64decode
-             | replace('https://127.0.0.1:6443', 'https://' ~ k3s_api_endpoint ~ ':6443') }}
+             | replace('https://127.0.0.1:6443', 'https://' ~ k3s_api_name ~ ':6443') }}
         dest: "{{ k3s_kubeconfig_local }}"
         mode: "0600"
       delegate_to: localhost
       become: false
+      run_once: true

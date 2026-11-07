@@ -1,14 +1,65 @@
 ---
-- name: Work out whether this server starts the cluster
-  ansible.builtin.set_fact:
-    k3s_server_first: "{{ inventory_hostname == groups['k3s_servers'][0] }}"
+- name: Find a running server to join through
+  ansible.builtin.include_role:
+    name: prereq
+    tasks_from: find_server
 
-- name: Read the join token from the first server
-  when: not k3s_server_first
+- name: Check whether this server is already in the cluster
+  ansible.builtin.stat:
+    path: /var/lib/rancher/k3s/server/db/etcd
+  register: k3s_server_etcd
+
+# An existing member keeps the join settings it was set up with, so a rerun
+# never restarts it just because a different server happens to be up.
+- name: Read the current config
+  when: k3s_server_etcd.stat.exists
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/config.yaml
+  register: k3s_server_current
+
+- name: Refuse to start a second cluster
+  when:
+    - not k3s_server_etcd.stat.exists
+    - prereq_join_server == ''
+    - inventory_hostname != groups['k3s_servers'][0]
+  ansible.builtin.fail:
+    msg: >-
+      No other server answers on port 6443, so there is no cluster to join.
+      Only {{ groups['k3s_servers'][0] }}, the first server in the inventory,
+      may start a new one.
+
+- name: Read the join token from a running server
+  when:
+    - not k3s_server_etcd.stat.exists
+    - prereq_join_server != ''
   ansible.builtin.slurp:
     src: /var/lib/rancher/k3s/server/token
-  delegate_to: "{{ groups['k3s_servers'][0] }}"
+  delegate_to: "{{ prereq_join_server or inventory_hostname }}"
   register: k3s_server_token
+
+- name: Keep the join settings this member already has
+  when: k3s_server_etcd.stat.exists
+  ansible.builtin.set_fact:
+    k3s_server_join: >-
+      {{ k3s_server_current.content | b64decode | from_yaml | dict2items
+         | selectattr('key', 'in', ['cluster-init', 'server', 'token']) | items2dict }}
+
+- name: Join through the running server
+  when:
+    - not k3s_server_etcd.stat.exists
+    - prereq_join_server != ''
+  ansible.builtin.set_fact:
+    k3s_server_join:
+      server: "https://{{ hostvars[prereq_join_server]['ansible_host'] }}:6443"
+      token: "{{ k3s_server_token.content | b64decode | trim }}"
+
+- name: Start the cluster
+  when:
+    - not k3s_server_etcd.stat.exists
+    - prereq_join_server == ''
+  ansible.builtin.set_fact:
+    k3s_server_join:
+      cluster-init: true
 
 - name: Write the K3s config
   ansible.builtin.template:
