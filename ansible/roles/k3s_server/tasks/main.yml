@@ -1,0 +1,38 @@
+---
+- name: Work out whether this server starts the cluster
+  ansible.builtin.set_fact:
+    k3s_server_first: "{{ inventory_hostname == groups['k3s_servers'][0] }}"
+
+- name: Read the join token from the first server
+  when: not k3s_server_first
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/token
+  delegate_to: "{{ groups['k3s_servers'][0] }}"
+  register: k3s_server_token
+
+- name: Write the K3s config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0600"
+  notify: Restart k3s
+
+- name: Install K3s
+  ansible.builtin.include_role:
+    name: prereq
+    tasks_from: install
+  vars:
+    prereq_k3s_exec: server
+
+- name: Apply a changed config now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until this server is Ready
+  ansible.builtin.command: >-
+    /usr/local/bin/k3s kubectl wait node/{{ inventory_hostname }}
+    --for=condition=Ready --timeout=10s
+  register: k3s_server_ready
+  until: k3s_server_ready.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false

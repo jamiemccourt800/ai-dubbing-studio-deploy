@@ -1,0 +1,3 @@
+# Your own VMs and the cluster's admin credentials (see ansible/README.md)
+ansible/inventory/hosts.yml
+ansible/kubeconfig

@@ -1,0 +1,25 @@
+# Copy to hosts.yml (git-ignored) and put in your own VMs.
+#
+# k3s_servers: the control plane, with etcd on each. Use 3 (or 5) so the
+#   cluster keeps working when one is down; 1 is fine for trying it out.
+#   The first one listed starts the cluster; the others join it.
+# k3s_agents: workers. Add as many as you like, rerun the playbook.
+#
+# ansible_host must be the VM's LAN address: the others use it to reach the
+# cluster.
+all:
+  vars:
+    ansible_user: ubuntu
+  children:
+    k3s_servers:
+      hosts:
+        ads-server-1:
+          ansible_host: 10.108.152.247
+        ads-server-2:
+          ansible_host: 192.168.1.11
+        ads-server-3:
+          ansible_host: 192.168.1.12
+    k3s_agents:
+      hosts:
+        ads-agent-1:
+          ansible_host: 192.168.1.20

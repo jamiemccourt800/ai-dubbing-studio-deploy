@@ -1,0 +1,33 @@
+# Settings for every node. Override any of them per host in the inventory.
+---
+# K3s release to install. Changing it and rerunning upgrades the nodes, one
+# server at a time.
+k3s_version: v1.37.2+k3s1
+
+# Where nodes join and kubectl connects: the first server, by default.
+k3s_api_endpoint: "{{ hostvars[groups['k3s_servers'][0]]['ansible_host'] | default(groups['k3s_servers'][0]) }}"
+
+# The address K3s uses for this node: the one on its default route.
+k3s_node_ip: "{{ ansible_facts['default_ipv4']['address'] }}"
+
+# Extra names or addresses the API certificate accepts, for example a DNS name.
+# The endpoint and every server's address are always included.
+k3s_extra_tls_sans: []
+
+# The LAN. When ufw is active on a node, only this network may reach the
+# cluster's own ports (API, etcd, kubelet, flannel). Web and LiveKit media
+# ports are opened to everyone.
+k3s_lan_cidr: 192.168.0.0/16
+
+# Ports that visitors reach: Traefik, and LiveKit's media ports for test and
+# prod (see the overlays).
+k3s_public_ports:
+  - { port: "80", proto: tcp }
+  - { port: "443", proto: tcp }
+  - { port: "7881", proto: tcp }
+  - { port: "7882", proto: udp }
+  - { port: "7891", proto: tcp }
+  - { port: "7892", proto: udp }
+
+# Where the playbook saves a kubeconfig for this cluster (git-ignored).
+k3s_kubeconfig_local: "{{ playbook_dir }}/kubeconfig"

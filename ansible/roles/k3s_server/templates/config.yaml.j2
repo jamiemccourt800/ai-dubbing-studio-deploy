@@ -1,0 +1,14 @@
+# Written by Ansible (roles/k3s_server). Changes here are overwritten.
+node-name: {{ inventory_hostname }}
+node-ip: {{ k3s_node_ip }}
+write-kubeconfig-mode: "0600"
+{% if k3s_server_first %}
+cluster-init: true
+{% else %}
+server: https://{{ k3s_api_endpoint }}:6443
+token: {{ k3s_server_token.content | b64decode | trim }}
+{% endif %}
+tls-san:
+{% for san in ([k3s_api_endpoint] + groups['k3s_servers'] | map('extract', hostvars, 'ansible_host') | list + k3s_extra_tls_sans) | unique %}
+  - {{ san }}
+{% endfor %}

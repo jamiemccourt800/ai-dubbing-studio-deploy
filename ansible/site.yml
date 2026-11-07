@@ -1,0 +1,58 @@
+# Turns the VMs in the inventory into one K3s cluster, or adds new ones to it.
+# Safe to rerun: nodes that are already set up are left as they are.
+#
+#   ansible-playbook site.yml
+#   ansible-playbook site.yml --limit ads-agent-2     # only add a new VM
+---
+- name: Check the inventory
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Servers must be an odd number, so etcd keeps a majority
+      ansible.builtin.assert:
+        that:
+          - groups['k3s_servers'] | default([]) | length > 0
+          - groups['k3s_servers'] | length is odd
+        fail_msg: >-
+          k3s_servers has {{ groups['k3s_servers'] | default([]) | length }}
+          hosts. Use 1, 3 or 5.
+
+- name: Prepare every node
+  hosts: k3s_servers:k3s_agents
+  become: true
+  roles:
+    - prereq
+
+# One at a time: each new server must be a full etcd member before the next
+# joins. The first one in the inventory starts the cluster.
+- name: Set up the servers
+  hosts: k3s_servers
+  become: true
+  serial: 1
+  roles:
+    - k3s_server
+
+- name: Join the agents
+  hosts: k3s_agents
+  become: true
+  roles:
+    - k3s_agent
+
+- name: Save a kubeconfig on this machine
+  hosts: k3s_servers[0]
+  become: true
+  tasks:
+    - name: Fetch the admin kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: k3s_admin_kubeconfig
+
+    - name: Write it, pointed at the cluster instead of localhost
+      ansible.builtin.copy:
+        content: >-
+          {{ k3s_admin_kubeconfig.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ k3s_api_endpoint ~ ':6443') }}
+        dest: "{{ k3s_kubeconfig_local }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
