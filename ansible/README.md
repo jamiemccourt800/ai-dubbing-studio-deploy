@@ -171,4 +171,8 @@ to the three servers:
   them back;
 - with ufw active, the rules above were added and the agent stayed `Ready`.
 
-Not tested yet: the real VMs, and kubectl on Windows itself.
+On the real VMs (Ubuntu 26.04, three servers and three agents), one
+`ansible-playbook site.yml` from the relay built the cluster, with all six
+nodes `Ready` and kubectl reaching it through `k3s.ads.lan`.
+
+Not tested yet: kubectl on Windows itself.
