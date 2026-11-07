@@ -17,8 +17,11 @@ working. No server is special once the cluster exists.
     ansible-galaxy collection install -r requirements.yml
     ```
 
-- **Ubuntu VMs** (tested on 24.04) on one LAN that you can reach by SSH, as a
-  user with sudo. Each one needs internet access to download K3s.
+- **Ubuntu VMs** (ours run 26.04; tested in Docker on 24.04) on one LAN that
+  you can reach by SSH as `administrator` with your key, and where
+  `administrator` can use sudo without a password: Ubuntu 26.04's sudo-rs
+  prompts in a way Ansible doesn't recognise. Each VM needs internet access to
+  download K3s.
 
 ## Set up the cluster
 
