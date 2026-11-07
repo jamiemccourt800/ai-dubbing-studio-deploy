@@ -9,6 +9,10 @@ k3s_version: v1.37.2+k3s1
 # working while a server is down.
 k3s_api_name: k3s.ads.lan
 
+# Add k3s_api_name to /etc/hosts on the machine running Ansible, with every
+# server's address. Set to false to manage the name yourself (DNS, or by hand).
+k3s_local_hosts_entries: true
+
 # The address K3s uses for this node: the one on its default route.
 k3s_node_ip: "{{ ansible_facts['default_ipv4']['address'] }}"
 

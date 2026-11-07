@@ -49,7 +49,8 @@ The playbook:
    second cluster is never started by accident;
 3. joins the agents the same way, and waits until each one is `Ready`;
 4. saves an admin kubeconfig as `ansible/kubeconfig` (git-ignored), taken from
-   the first server it can reach and pointed at `k3s.ads.lan` (see
+   the first server it can reach and pointed at `k3s.ads.lan`, and adds that
+   name to `/etc/hosts` on the machine running Ansible (see
    [kubectl](#kubectl)).
 
 The join token is read from a running server whenever it's needed, so it is
@@ -65,14 +66,23 @@ three servers**. kubectl tries the addresses in turn, so when a server is down
 it moves on to the next one, with no virtual IP and nothing to switch by hand.
 The API certificate accepts that name.
 
-Add these lines to `/etc/hosts` on the machine you run kubectl from (in WSL,
-the WSL distribution's `/etc/hosts`), once:
+`site.yml` adds the name to `/etc/hosts` on the machine running Ansible, with
+every server's address from the inventory, in a block it keeps up to date:
 
 ```text
+# BEGIN k3s.ads.lan: K3s servers (ai-dubbing-studio-deploy/ansible)
 10.108.159.43 k3s.ads.lan
 10.108.153.26 k3s.ads.lan
 10.108.159.83 k3s.ads.lan
+# END k3s.ads.lan: K3s servers (ai-dubbing-studio-deploy/ansible)
 ```
+
+This needs sudo on that machine. If sudo there asks for a password, run the
+playbook with `-K`. To run kubectl from another machine, copy the kubeconfig
+and add the same three lines there. Set `k3s_local_hosts_entries: false` to
+leave `/etc/hosts` alone, for example when the name is in DNS. On WSL, Windows
+rewrites `/etc/hosts` on restart unless `generateHosts = false` is set in
+`/etc/wsl.conf`.
 
 Then:
 
@@ -123,6 +133,7 @@ All in `group_vars/all.yml`. Any of them can be set per VM in the inventory.
 |---|---|---|
 | `k3s_version` | `v1.37.2+k3s1` | The K3s release |
 | `k3s_api_name` | `k3s.ads.lan` | The name in the kubeconfig, resolving to every server |
+| `k3s_local_hosts_entries` | `true` | Add that name to `/etc/hosts` on the machine running Ansible |
 | `k3s_node_ip` | the address on the VM's default route | The address K3s uses for the node |
 | `k3s_extra_tls_sans` | none | Extra names for the API certificate |
 | `k3s_lan_cidr` | `10.108.152.0/21` | The LAN, which ufw lets reach the cluster's own ports |

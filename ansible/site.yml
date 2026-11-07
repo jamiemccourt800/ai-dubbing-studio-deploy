@@ -68,3 +68,20 @@
       delegate_to: localhost
       become: false
       run_once: true
+
+    # kubectl tries each address of k3s_api_name in turn, so it keeps working
+    # while a server is down. Needs sudo on this machine.
+    - name: Make k3s_api_name resolve to every server on this machine
+      when: k3s_local_hosts_entries | bool
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} {{ k3s_api_name }}: K3s servers (ai-dubbing-studio-deploy/ansible)"
+        block: |
+          {% for server in groups['k3s_servers'] %}
+          {{ hostvars[server]['ansible_host'] }} {{ k3s_api_name }}
+          {% endfor %}
+        # /etc/hosts is a mounted file in WSL and containers, which can't be
+        # replaced by renaming; write it in place instead.
+        unsafe_writes: true
+      delegate_to: localhost
+      run_once: true
