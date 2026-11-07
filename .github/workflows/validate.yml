@@ -1,0 +1,50 @@
+# Checks every pull request before Argo CD ever sees it: each overlay must render,
+# and what it renders must be valid Kubernetes. The README is linted the same way
+# as the app repository's docs.
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    name: Manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # kubectl is already on GitHub's runners; `kubectl kustomize` renders an
+      # overlay exactly as Argo CD will.
+      - name: Render every overlay
+        run: |
+          mkdir -p rendered
+          for overlay in overlays/*/; do
+            name=$(basename "$overlay")
+            echo "::group::$name"
+            kubectl kustomize "$overlay" > "rendered/$name.yaml"
+            echo "rendered $(grep -c '^kind:' "rendered/$name.yaml") objects"
+            echo "::endgroup::"
+          done
+          cp cluster/*.yaml rendered/
+
+      # kubeconform checks each object against Kubernetes' schemas: misspelled
+      # fields, wrong types, missing required fields. K3s's own HelmChartConfig
+      # has no public schema, so it's skipped rather than failed.
+      - name: Validate against the Kubernetes schemas
+        run: >-
+          docker run --rm -v "$PWD/rendered:/m" ghcr.io/yannh/kubeconform:v0.6.7
+          -strict -summary -ignore-missing-schemas /m
+
+  readme:
+    name: Markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v20
+        with:
+          globs: "**/*.md"

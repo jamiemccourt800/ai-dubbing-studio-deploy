@@ -1,0 +1,25 @@
+# The test environment: what's merged into the app repo's `testing` branch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ads-test
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  # Built and pushed by the app repo's Images workflow (YGP-52).
+  - name: ai-dubbing-studio-api
+    newName: glossia/ai-dubbing-studio-api
+    newTag: testing
+patches:
+  # The address browsers use for the test environment. Change both lines when
+  # the public endpoint is set up (YGP-53).
+  - target: { kind: ConfigMap, name: api-config }
+    patch: |
+      - op: replace
+        path: /data/BETTER_AUTH_URL
+        value: http://ads-test.localhost
+  - target: { kind: Ingress, name: api }
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: ads-test.localhost

@@ -1,0 +1,47 @@
+# Production: what's merged into the app repo's `main` branch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ads-prod
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  # Built and pushed by the app repo's Images workflow (YGP-52).
+  - name: ai-dubbing-studio-api
+    newName: glossia/ai-dubbing-studio-api
+    newTag: prod
+patches:
+  # The address browsers use for production. Change both lines when the public
+  # endpoint is set up (YGP-53).
+  - target: { kind: ConfigMap, name: api-config }
+    patch: |
+      - op: replace
+        path: /data/BETTER_AUTH_URL
+        value: http://ads.localhost
+  - target: { kind: Ingress, name: api }
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: ads.localhost
+  # Media ports 7891 (TCP) and 7892 (UDP), so production and test can share one
+  # node: test keeps the base's 7881 and 7882.
+  - target: { kind: ConfigMap, name: livekit-config }
+    patch: |
+      - op: replace
+        path: /data/livekit.yaml
+        value: |
+          port: 7880
+          rtc:
+            tcp_port: 7891
+            udp_port: 7892
+            use_external_ip: false
+          logging:
+            level: info
+  - target: { kind: Deployment, name: livekit }
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/1
+        value: { name: rtc-tcp, containerPort: 7891, hostPort: 7891, protocol: TCP }
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/2
+        value: { name: rtc-udp, containerPort: 7892, hostPort: 7892, protocol: UDP }

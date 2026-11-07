@@ -1,0 +1,91 @@
+# LiveKit (ADR-0001, ADR-0020): the media server. The API reaches it inside the
+# cluster at ws://livekit:7880; browsers and phones send and receive audio on
+# the media ports, which are opened on the node itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: livekit-config
+data:
+  # Same settings as config/livekit.yaml in the app repo. The overlays change
+  # the two media ports, so test and prod don't clash on one node.
+  livekit.yaml: |
+    port: 7880
+    rtc:
+      tcp_port: 7881
+      udp_port: 7882
+      use_external_ip: false
+    logging:
+      level: info
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit
+  labels: { app: livekit }
+spec:
+  selector: { app: livekit }
+  ports:
+    - name: http
+      port: 7880
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit
+  labels: { app: livekit }
+spec:
+  replicas: 1
+  # One pod at a time: the media ports are on the node, so a second pod can't
+  # start until the old one has gone.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: livekit }
+  template:
+    metadata:
+      labels: { app: livekit }
+    spec:
+      # Don't add Kubernetes' automatic <SERVICE>_PORT variables: a Service called
+      # "livekit" would set LIVEKIT_PORT, which LiveKit reads as its own setting.
+      enableServiceLinks: false
+      containers:
+        - name: livekit
+          image: livekit/livekit-server:v1.13.11
+          # Browsers are told to send media to the node's own address.
+          args: ["--config", "/etc/livekit/livekit.yaml", "--node-ip", "$(NODE_IP)"]
+          env:
+            - name: NODE_IP
+              valueFrom:
+                fieldRef: { fieldPath: status.hostIP }
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef: { name: livekit, key: api-key }
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef: { name: livekit, key: api-secret }
+            # "key: secret", as LiveKit expects it.
+            - name: LIVEKIT_KEYS
+              value: "$(LIVEKIT_API_KEY): $(LIVEKIT_API_SECRET)"
+          ports:
+            - name: http
+              containerPort: 7880
+            - name: rtc-tcp
+              containerPort: 7881
+              hostPort: 7881
+              protocol: TCP
+            - name: rtc-udp
+              containerPort: 7882
+              hostPort: 7882
+              protocol: UDP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/livekit
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+      volumes:
+        - name: config
+          configMap:
+            name: livekit-config
