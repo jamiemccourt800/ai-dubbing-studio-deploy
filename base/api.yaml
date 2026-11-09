@@ -13,6 +13,8 @@ data:
   # rate limit, instead of everyone sharing Traefik's address.
   TRUSTED_PROXIES: 10.42.0.0/16
   LIVEKIT_URL: ws://livekit:7880
+  # Translation jobs go to the workers through Redis (ADR-0018).
+  REDIS_URL: redis://redis:6379
 ---
 apiVersion: v1
 kind: Service
@@ -68,6 +70,10 @@ spec:
             - name: LIVEKIT_API_SECRET
               valueFrom:
                 secretKeyRef: { name: livekit, key: api-secret }
+            # The workers send it on /internal; the same Secret as theirs.
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: internal, key: token }
           # /health: the process is up. /ready: it can also reach Postgres.
           livenessProbe:
             httpGet: { path: /health, port: http }
