@@ -11,6 +11,12 @@ images:
     newName: glossia/ai-dubbing-studio-api
     newTag: testing
 patches:
+  # The /internal block's middleware, in this environment's namespace.
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-test-deny-internal@kubernetescrd
   # The address browsers use for the test environment. Change both lines when
   # the public endpoint is set up (YGP-53).
   - target: { kind: ConfigMap, name: api-config }
@@ -18,7 +24,8 @@ patches:
       - op: replace
         path: /data/BETTER_AUTH_URL
         value: http://ads-test.localhost
-  - target: { kind: Ingress, name: api }
+  # Both Ingresses: the API, and the /internal block in front of it.
+  - target: { kind: Ingress }
     patch: |
       - op: replace
         path: /spec/rules/0/host

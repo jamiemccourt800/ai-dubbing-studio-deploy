@@ -18,7 +18,8 @@ releases. **No secrets are kept here**; they're created on the cluster by hand
 
 ```text
 base/                  what every environment runs
-  api.yaml             the Hono API with the built app, its Service and Ingress
+  api.yaml             the Hono API with the built app, its Service and Ingress,
+                       and the Ingress that blocks /internal
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
 overlays/
@@ -102,6 +103,13 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
   ports, and why LiveKit restarts with `Recreate` (one pod at a time).
 - **The API restarts a few times on a fresh deploy** until Postgres is ready.
   That's expected: it exits if it can't reach the database, and then stays up.
+- **`/internal` is blocked at the Ingress.** It's the translator workers' API,
+  and they call the API's Service directly (`http://api`). Through Traefik,
+  `/internal` and everything under it answer `403 Forbidden`: a second
+  Ingress for that path uses the `deny-internal` middleware, which only allows
+  `127.0.0.1`. Each overlay names the middleware with its namespace
+  (`ads-test-deny-internal@kubernetescrd`). To check it on a cluster:
+  `curl -i http://ads-test.localhost/internal/tracks/x/claim` should give `403`.
 
 ## Try it on your own machine (k3d)
 
