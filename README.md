@@ -29,6 +29,7 @@ cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
+  prod.yaml            the same for ads-prod (not applied yet)
 ```
 
 | Overlay | Namespace | API image | Host name | LiveKit media ports |
@@ -122,7 +123,7 @@ them.
 | Application | Overlay | Namespace | Status |
 |---|---|---|---|
 | `ads-test` | `overlays/test` | `ads-test` | Set up |
-| `ads-prod` | `overlays/prod` | `ads-prod` | Not yet: once something reaches the app repo's `main` |
+| `ads-prod` | `overlays/prod` | `ads-prod` | Written (`argocd/prod.yaml`), not applied: once something reaches the app repo's `main` and the `ads-prod` Secrets exist |
 
 Set up once, after the Secrets exist:
 
