@@ -6,11 +6,14 @@
     update_cache: true
     cache_valid_time: 3600
 
-- name: Download the K3s installer
+# The installer from the K3s release being installed, not get.k3s.io (always
+# the newest script, run as root). Downloaded again when k3s_version changes.
+- name: Download the K3s installer for {{ k3s_version }}
   ansible.builtin.get_url:
-    url: https://get.k3s.io
+    url: https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version }}/install.sh
     dest: /usr/local/bin/k3s-install.sh
     mode: "0755"
+    force: true
 
 - name: Create the K3s config folder
   ansible.builtin.file:

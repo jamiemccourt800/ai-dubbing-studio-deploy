@@ -17,12 +17,14 @@
 # An existing agent keeps the server it joined through: it learns every
 # server's address from it, and reaches whichever is up.
 - name: Read the current config
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: k3s_agent_config.stat.exists
   ansible.builtin.slurp:
     src: /etc/rancher/k3s/config.yaml
   register: k3s_agent_current
 
 - name: Read the join token from a running server
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: not k3s_agent_config.stat.exists
   ansible.builtin.slurp:
     src: /var/lib/rancher/k3s/server/token
@@ -30,6 +32,7 @@
   register: k3s_agent_token
 
 - name: Keep the join settings this agent already has
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: k3s_agent_config.stat.exists
   ansible.builtin.set_fact:
     k3s_agent_join: >-
@@ -37,6 +40,7 @@
          | selectattr('key', 'in', ['server', 'token']) | items2dict }}
 
 - name: Join through the running server
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: not k3s_agent_config.stat.exists
   ansible.builtin.set_fact:
     k3s_agent_join:
@@ -44,6 +48,7 @@
       token: "{{ k3s_agent_token.content | b64decode | trim }}"
 
 - name: Write the K3s config
+  no_log: true  # the token or the admin key would show with -v or --diff
   ansible.builtin.template:
     src: config.yaml.j2
     dest: /etc/rancher/k3s/config.yaml

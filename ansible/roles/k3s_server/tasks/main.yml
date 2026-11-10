@@ -12,6 +12,7 @@
 # An existing member keeps the join settings it was set up with, so a rerun
 # never restarts it just because a different server happens to be up.
 - name: Read the current config
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: k3s_server_etcd.stat.exists
   ansible.builtin.slurp:
     src: /etc/rancher/k3s/config.yaml
@@ -29,6 +30,7 @@
       may start a new one.
 
 - name: Read the join token from a running server
+  no_log: true  # the token or the admin key would show with -v or --diff
   when:
     - not k3s_server_etcd.stat.exists
     - prereq_join_server != ''
@@ -38,6 +40,7 @@
   register: k3s_server_token
 
 - name: Keep the join settings this member already has
+  no_log: true  # the token or the admin key would show with -v or --diff
   when: k3s_server_etcd.stat.exists
   ansible.builtin.set_fact:
     k3s_server_join: >-
@@ -45,6 +48,7 @@
          | selectattr('key', 'in', ['cluster-init', 'server', 'token']) | items2dict }}
 
 - name: Join through the running server
+  no_log: true  # the token or the admin key would show with -v or --diff
   when:
     - not k3s_server_etcd.stat.exists
     - prereq_join_server != ''
@@ -62,6 +66,7 @@
       cluster-init: true
 
 - name: Write the K3s config
+  no_log: true  # the token or the admin key would show with -v or --diff
   ansible.builtin.template:
     src: config.yaml.j2
     dest: /etc/rancher/k3s/config.yaml

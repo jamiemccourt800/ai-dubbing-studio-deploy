@@ -53,12 +53,14 @@
   become: true
   tasks:
     - name: Fetch the admin kubeconfig
+      no_log: true  # the token or the admin key would show with -v or --diff
       ansible.builtin.slurp:
         src: /etc/rancher/k3s/k3s.yaml
       register: k3s_admin_kubeconfig
       run_once: true
 
     - name: Write it, pointed at the cluster's name instead of localhost
+      no_log: true  # the token or the admin key would show with -v or --diff
       ansible.builtin.copy:
         content: >-
           {{ k3s_admin_kubeconfig.content | b64decode
