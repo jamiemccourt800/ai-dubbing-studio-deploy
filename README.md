@@ -30,6 +30,7 @@ cluster/
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
+  image-updater-test.yaml  Image Updater: new "testing" images reach ads-test
 ```
 
 | Overlay | Namespace | API image | Host name | LiveKit media ports |
@@ -150,10 +151,52 @@ The first password is in the `argocd-initial-admin-secret` Secret. Read it
 yourself (`argocd admin initial-password -n argocd`), and don't paste it into
 chats or tickets.
 
-**Not yet: new images.** The test overlay uses the moving `testing` tag, so
-the manifests don't change when a new image is pushed, and Argo CD doesn't
-notice it. Until that's decided (ADR-0021 in the app repo), restart the API to
-pull the new image: `kubectl -n ads-test rollout restart deploy/api`.
+### New images (Image Updater, test only)
+
+The test overlay uses the moving `testing` tag, so the manifests don't change
+when a new image is pushed, and Argo CD alone wouldn't notice it. **Argo CD
+Image Updater** (v1.3.3) fills that gap for the test environment (ADR-0021
+option A in the app repo): every 5 minutes it checks Docker Hub, and when
+`testing` points to a new image it sets that image's digest on the `ads-test`
+application. Argo CD then rolls the pods onto it. Nothing is written to Git.
+
+Production doesn't use it: `ads-prod` only changes through a reviewed pull
+request here that pins the commit SHA (ADR-0021 option C).
+
+Set up once, after `argocd/test.yaml`:
+
+```bash
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v1.3.3/config/install.yaml
+kubectl apply -f argocd/image-updater-test.yaml
+kubectl -n argocd rollout restart deploy/argocd-image-updater-controller
+```
+
+The restart makes it read the 5-minute interval from
+`argocd-image-updater-config`.
+
+Check it:
+
+```bash
+kubectl -n argocd get imageupdaters
+kubectl -n argocd logs deploy/argocd-image-updater-controller --since=15m
+```
+
+It only updates an image the application already runs, so the first update
+shows up after `ads-test` has synced once. If the logs show Docker Hub
+refusing requests (too many requests), give it a read-only Docker Hub token as
+a pull secret.
+
+**Rolling back on test:** a digest set by Image Updater wins over the tag in
+Git. To pin an older image, pause Image Updater first, then pin, and turn it
+back on after the fix:
+
+```bash
+kubectl -n argocd scale deploy/argocd-image-updater-controller --replicas=0   # pause
+kubectl -n argocd scale deploy/argocd-image-updater-controller --replicas=1   # resume
+```
+
+Without Image Updater, restarting the API pulls the newest `testing` image:
+`kubectl -n ads-test rollout restart deploy/api`.
 
 ## Try it on your own machine (k3d)
 
