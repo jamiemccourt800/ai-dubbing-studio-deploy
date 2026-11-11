@@ -29,6 +29,9 @@ overlays/
   local/               namespace ads-local, an image you built, for trying it with k3d
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
+argocd/
+  test.yaml            the Argo CD application that keeps ads-test in sync
+  prod.yaml            the same for ads-prod (not applied yet)
 ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
@@ -123,6 +126,55 @@ kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<y
 - **`/internal` is still reachable through the Ingress**, which sends every
   path to the API. The workers' token protects it, but it should be blocked
   at the Ingress (YGP-71, next).
+
+## Argo CD
+
+Argo CD (v3.5.6) runs on the K3s cluster in the `argocd` namespace (YGP-82).
+Each environment is one Argo CD application, in `argocd/`. It points at the
+environment's overlay on `main` and syncs on its own:
+
+- **A merge to `main`** that changes the overlay or `base/` reaches the cluster
+  within about 3 minutes (Argo CD checks Git every 3 minutes).
+- **prune**: a resource removed from Git is deleted from the cluster.
+- **selfHeal**: a change made on the cluster by hand is undone.
+
+The Secrets aren't in Git, so Argo CD doesn't track them and never deletes
+them.
+
+| Application | Overlay | Namespace | Status |
+|---|---|---|---|
+| `ads-test` | `overlays/test` | `ads-test` | Set up |
+| `ads-prod` | `overlays/prod` | `ads-prod` | Written (`argocd/prod.yaml`), not applied: once something reaches the app repo's `main` and the `ads-prod` Secrets exist |
+
+Set up once, after the Secrets exist:
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
+kubectl apply -f argocd/test.yaml
+```
+
+Check it:
+
+```bash
+kubectl -n argocd get applications     # SYNC STATUS Synced, HEALTH Healthy
+```
+
+To open the Argo CD UI, forward its port and open <https://localhost:8443>
+(user `admin`):
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8443:443
+```
+
+The first password is in the `argocd-initial-admin-secret` Secret. Read it
+yourself (`argocd admin initial-password -n argocd`), and don't paste it into
+chats or tickets.
+
+**Not yet: new images.** The test overlay uses the moving `testing` tag, so
+the manifests don't change when a new image is pushed, and Argo CD doesn't
+notice it. Until that's decided (ADR-0021 in the app repo), restart the API to
+pull the new image: `kubectl -n ads-test rollout restart deploy/api`.
 
 ## Try it on your own machine (k3d)
 

@@ -1,0 +1,25 @@
+# The test environment's Argo CD application (YGP-82): Argo CD keeps the
+# ads-test namespace matching overlays/test on main. Applied once by hand
+# (kubectl apply -f argocd/test.yaml); after that, every merge to main that
+# changes overlays/test or base/ reaches the cluster without anyone logging in.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ads-test
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jamiemccourt800/ai-dubbing-studio-deploy.git
+    targetRevision: main
+    path: overlays/test
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ads-test
+  syncPolicy:
+    automated:
+      # Delete what's removed from Git. The Secrets made by hand aren't
+      # tracked by Argo CD, so they're never pruned.
+      prune: true
+      # Undo changes made on the cluster by hand, so Git stays the truth.
+      selfHeal: true

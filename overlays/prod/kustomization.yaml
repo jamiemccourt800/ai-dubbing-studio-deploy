@@ -14,6 +14,13 @@ images:
     newName: glossia/ai-dubbing-studio-translator
     newTag: prod
 patches:
+  # The `prod` tag moves to each new image, so always pull it: with the
+  # default (IfNotPresent) a restarted pod would keep running the old image.
+  - target: { kind: Deployment, name: api }
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
   # The address browsers use for production. Change both lines when the public
   # endpoint is set up (YGP-53).
   - target: { kind: ConfigMap, name: api-config }
