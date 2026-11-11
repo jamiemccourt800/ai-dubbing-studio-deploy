@@ -1,0 +1,9 @@
+# Written by Ansible (roles/k3s_server). Changes here are overwritten.
+{{ {
+  'node-name': inventory_hostname,
+  'node-ip': k3s_node_ip,
+  'write-kubeconfig-mode': '0600',
+  'tls-san': ([k3s_api_name]
+              + groups['k3s_servers'] | map('extract', hostvars, 'ansible_host') | list
+              + k3s_extra_tls_sans) | unique,
+} | combine(k3s_server_join) | to_nice_yaml(indent=2) }}

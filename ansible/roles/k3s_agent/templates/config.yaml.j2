@@ -1,0 +1,5 @@
+# Written by Ansible (roles/k3s_agent). Changes here are overwritten.
+{{ {
+  'node-name': inventory_hostname,
+  'node-ip': k3s_node_ip,
+} | combine(k3s_agent_join) | to_nice_yaml(indent=2) }}

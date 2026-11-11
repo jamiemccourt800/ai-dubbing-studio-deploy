@@ -10,6 +10,9 @@ images:
   - name: ai-dubbing-studio-api
     newName: glossia/ai-dubbing-studio-api
     newTag: prod
+  - name: ai-dubbing-studio-translator
+    newName: glossia/ai-dubbing-studio-translator
+    newTag: prod
 patches:
   # The address browsers use for production, through the Cloudflare Tunnel
   # (YGP-92). Cloudflare serves it over HTTPS.

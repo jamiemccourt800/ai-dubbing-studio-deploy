@@ -1,0 +1,57 @@
+# Redis (ADR-0018): the translation jobs' stream, `translate:jobs`. Redis only
+# delivers jobs; who owns each track is kept in Postgres, so losing Redis loses
+# no state: the API sends the jobs of waiting tracks again once it's back.
+# Append-only file on a volume, as in the app repo's Docker Compose.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels: { app: redis }
+spec:
+  selector: { app: redis }
+  ports:
+    - name: redis
+      port: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  labels: { app: redis }
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      # See postgres.yaml: no automatic <SERVICE>_PORT variables.
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          # Same version as Docker Compose in the app repo.
+          image: redis:8-alpine
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 256Mi }
+  # K3s's built-in "local-path" storage keeps the data on the node's disk.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 1Gi }

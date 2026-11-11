@@ -1,0 +1,27 @@
+# The production Argo CD application (YGP-82): Argo CD keeps the ads-prod
+# namespace matching overlays/prod on main. Applied once by hand
+# (kubectl apply -f argocd/prod.yaml), but only once something has reached the
+# app repo's main, so the `prod` images exist, and after the ads-prod Secrets
+# are created. After that, every merge to main that changes overlays/prod or
+# base/ reaches the cluster without anyone logging in.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ads-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jamiemccourt800/ai-dubbing-studio-deploy.git
+    targetRevision: main
+    path: overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ads-prod
+  syncPolicy:
+    automated:
+      # Delete what's removed from Git. The Secrets made by hand aren't
+      # tracked by Argo CD, so they're never pruned.
+      prune: true
+      # Undo changes made on the cluster by hand, so Git stays the truth.
+      selfHeal: true

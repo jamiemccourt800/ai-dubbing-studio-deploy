@@ -1,0 +1,3 @@
+# The cluster's admin credentials (see ansible/README.md)
+ansible/kubeconfig
+.idea/
