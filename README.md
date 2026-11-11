@@ -20,7 +20,9 @@ releases. **No secrets are kept here**; they're created on the cluster by hand
 base/                  what every environment runs
   api.yaml             the Hono API with the built app, its Service and Ingress
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
+  redis.yaml           Redis 8 for the translation jobs, with a 1 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
+  translator.yaml      the translation workers: a warm pool of 2
 overlays/
   test/                namespace ads-test, images tagged "testing"
   prod/                namespace ads-prod, images tagged "prod", media ports 7891/7892
@@ -30,11 +32,15 @@ cluster/
 ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
-| Overlay | Namespace | API image | Host name | LiveKit media ports |
+| Overlay | Namespace | Image tag | Host name | LiveKit media ports |
 |---|---|---|---|---|
-| test | `ads-test` | `glossia/ai-dubbing-studio-api:testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
-| prod | `ads-prod` | `glossia/ai-dubbing-studio-api:prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
-| local | `ads-local` | `ai-dubbing-studio-api:local` | `ads.localhost` | 7881 TCP, 7882 UDP |
+| test | `ads-test` | `testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
+| prod | `ads-prod` | `prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
+| local | `ads-local` | `local` (built yourself) | `ads.localhost` | 7881 TCP, 7882 UDP |
+
+The images are `glossia/ai-dubbing-studio-api` and
+`glossia/ai-dubbing-studio-translator` on Docker Hub, built by the app repo's
+Images workflow.
 
 The host names are placeholders until the public endpoint exists (YGP-53). Each
 overlay sets its host in two places: `BETTER_AUTH_URL` and the Ingress.
@@ -77,7 +83,7 @@ Once per cluster, before the first deploy:
 
 ## Secrets
 
-Three Secrets per namespace. Use your own random values, for example from
+Five Secrets per namespace. Use your own random values, for example from
 `openssl rand -hex 24`, and different ones for test and prod:
 
 ```bash
@@ -86,6 +92,8 @@ kubectl create namespace $NS
 kubectl -n $NS create secret generic postgres --from-literal=password=<random>
 kubectl -n $NS create secret generic livekit  --from-literal=api-key=<name> --from-literal=api-secret=<at least 32 random characters>
 kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=<at least 32 random characters>
+kubectl -n $NS create secret generic internal --from-literal=token=<at least 32 random characters>
+kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<your Gemini API key>
 ```
 
 | Secret | Keys | Used by |
@@ -93,6 +101,8 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
 | `postgres` | `password` | Postgres, and the API's `DATABASE_URL` |
 | `livekit` | `api-key`, `api-secret` | LiveKit, and the API (rooms and tokens) |
 | `api` | `better-auth-secret` | The API's login cookies. Changing it logs every host out. |
+| `internal` | `token` | The API and the workers, for the workers' `/internal` calls |
+| `translator` | `gemini-api-key` | The workers' Gemini Live API key |
 
 ## Things to know
 
@@ -107,6 +117,12 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
   ports, and why LiveKit restarts with `Recreate` (one pod at a time).
 - **The API restarts a few times on a fresh deploy** until Postgres is ready.
   That's expected: it exits if it can't reach the database, and then stays up.
+- **The workers don't translate real audio yet.** Until they connect to
+  LiveKit (YGP-70), they use their WAV adapter: they start, take jobs and
+  claim tracks, but have no audio to work on.
+- **`/internal` is still reachable through the Ingress**, which sends every
+  path to the API. The workers' token protects it, but it should be blocked
+  at the Ingress (YGP-71, next).
 
 ## Try it on your own machine (k3d)
 

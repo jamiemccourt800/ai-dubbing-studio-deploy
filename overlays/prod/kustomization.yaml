@@ -10,6 +10,9 @@ images:
   - name: ai-dubbing-studio-api
     newName: glossia/ai-dubbing-studio-api
     newTag: prod
+  - name: ai-dubbing-studio-translator
+    newName: glossia/ai-dubbing-studio-translator
+    newTag: prod
 patches:
   # The address browsers use for production. Change both lines when the public
   # endpoint is set up (YGP-53).
