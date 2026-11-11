@@ -24,5 +24,5 @@ jobs:
       # Pinned, so a new release can't break or change the check.
       - run: pip install ansible==14.6.0 ansible-lint==26.11.0
       - run: ansible-galaxy collection install -r requirements.yml
-      - run: ansible-playbook --syntax-check site.yml remove.yml
-      - run: ansible-lint --profile production site.yml remove.yml
+      - run: ansible-playbook --syntax-check site.yml remove.yml relay.yml
+      - run: ansible-lint --profile production site.yml remove.yml relay.yml

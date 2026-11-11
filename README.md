@@ -35,7 +35,7 @@ cluster/
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
-ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
+ansible/               builds the K3s cluster from the VMs, and the Hetzner relay (see ansible/README.md)
 ```
 
 | Overlay | Namespace | Image tag | Host name | LiveKit media ports |

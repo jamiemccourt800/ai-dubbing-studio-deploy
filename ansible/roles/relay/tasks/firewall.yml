@@ -1,0 +1,28 @@
+---
+- name: Let the pods connect to WireGuard
+  community.general.ufw:
+    rule: allow
+    port: "{{ relay_wg_port | string }}"
+    proto: udp
+
+# 80 is needed for Let's Encrypt, and redirects to HTTPS.
+- name: Open the signaling ports for Caddy
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["80", "443"]
+
+# Forwarded traffic goes through ufw's route rules, not its incoming ones.
+- name: Let media through to the pods
+  community.general.ufw:
+    rule: allow
+    route: true
+    interface_in: "{{ relay_public_iface }}"
+    interface_out: wg0
+    to_ip: "{{ item.0.tunnel_ip }}"
+    port: "{{ item.1.port | string }}"
+    proto: "{{ item.1.proto }}"
+  loop: "{{ relay_active_peers | subelements('media_ports') }}"
+  loop_control:
+    label: "{{ item.0.name }} {{ item.1.port }}/{{ item.1.proto }}"
