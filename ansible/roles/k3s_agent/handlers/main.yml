@@ -1,0 +1,7 @@
+---
+# Not needed right after an install: the installer has just started K3s.
+- name: Restart k3s-agent
+  when: prereq_k3s_installed_now is not defined or prereq_k3s_installed_now is skipped
+  ansible.builtin.systemd_service:
+    name: k3s-agent
+    state: restarted

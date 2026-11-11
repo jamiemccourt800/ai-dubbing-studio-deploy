@@ -1,0 +1,37 @@
+---
+- name: Let the LAN reach the kubelet and flannel
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ k3s_lan_cidr }}"
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "10250", proto: tcp }
+    - { port: "8472", proto: udp }
+
+- name: Let the LAN reach the API and etcd on servers
+  when: inventory_hostname in groups['k3s_servers']
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ k3s_lan_cidr }}"
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - "6443"
+    - "2379:2380"
+
+# K3s's own pod and service networks.
+- name: Let pods and services talk to the node
+  community.general.ufw:
+    rule: allow
+    from_ip: "{{ item }}"
+  loop:
+    - 10.42.0.0/16
+    - 10.43.0.0/16
+
+- name: Open the web and LiveKit media ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: "{{ k3s_public_ports }}"

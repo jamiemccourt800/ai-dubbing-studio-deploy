@@ -1,0 +1,44 @@
+# Takes VMs out of the cluster and uninstalls K3s from them. Needs --limit,
+# so it can't wipe the whole cluster by accident:
+#
+#   ansible-playbook remove.yml --limit ads-agent-2
+#
+# To remove everything: -e remove_all=true (no --limit needed).
+---
+- name: Remove K3s from nodes
+  hosts: k3s_servers:k3s_agents
+  become: true
+  # Servers one at a time, so etcd keeps a majority while they leave.
+  serial: 1
+  tasks:
+    - name: Refuse to run on every node unless asked to
+      ansible.builtin.assert:
+        that: ansible_limit is defined or remove_all | default(false) | bool
+        fail_msg: Pass --limit with the nodes to remove, or -e remove_all=true.
+      run_once: true
+
+    - name: Find another server that is up
+      when: not remove_all | default(false) | bool
+      ansible.builtin.include_role:
+        name: prereq
+        tasks_from: find_server
+
+    # Deleting the node also takes a server out of etcd. Skipped when
+    # everything goes, or when no other server is left to ask.
+    - name: Delete the node from the cluster
+      when:
+        - not remove_all | default(false) | bool
+        - prereq_join_server | default('') != ''
+      ansible.builtin.command: >-
+        /usr/local/bin/k3s kubectl delete node {{ inventory_hostname }}
+        --ignore-not-found
+      delegate_to: "{{ prereq_join_server | default('', true) or inventory_hostname }}"
+      changed_when: true
+
+    - name: Uninstall K3s
+      ansible.builtin.command: "{{ item }}"
+      args:
+        removes: "{{ item }}"
+      loop:
+        - /usr/local/bin/k3s-agent-uninstall.sh
+        - /usr/local/bin/k3s-uninstall.sh
