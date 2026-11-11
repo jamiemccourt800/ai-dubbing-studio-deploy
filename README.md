@@ -133,6 +133,39 @@ dashboard instead.
 In the Cloudflare dashboard, under **SSL/TLS → Edge Certificates**, turn on
 **Always Use HTTPS**, so plain HTTP is redirected to HTTPS.
 
+Cloudflare renews its certificate itself; there is nothing to renew by hand.
+
+### Check it works
+
+Once an environment is deployed:
+
+```bash
+# HTTPS with a valid certificate: {"status":"ok"}
+curl https://test.glossia.ie/ready
+
+# Plain HTTP is redirected: 301 to https://
+curl -sI http://test.glossia.ie | head -n 3
+
+# /internal is refused: 403
+curl -s -o /dev/null -w '%{http_code}\n' https://test.glossia.ie/internal/x
+```
+
+The API has no WebSocket of its own yet, so check WebSockets with a throwaway
+echo server on the test host, then remove it:
+
+```bash
+kubectl -n ads-test create deployment ws-echo --image=jmalloc/echo-server:v0.3.7 --port=8080
+kubectl -n ads-test expose deployment ws-echo --port=80 --target-port=8080
+kubectl -n ads-test create ingress ws-echo --rule="test.glossia.ie/ws-echo=ws-echo:80"
+
+# Expect "HTTP/1.1 101 Switching Protocols"
+curl -si --http1.1 --max-time 5 https://test.glossia.ie/ws-echo \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" | head -n 1
+
+kubectl -n ads-test delete ingress,service,deployment ws-echo
+```
+
 A new environment needs only its DNS record (`cloudflared tunnel route dns
 glossia <host>`) and its host name in its overlay. The tunnel sends every name
 to Traefik.
