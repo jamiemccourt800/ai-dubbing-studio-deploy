@@ -18,7 +18,7 @@ releases. **No secrets are kept here**; they're created on the cluster by hand
 
 ```text
 base/                  what every environment runs
-  api.yaml             the Hono API with the built app, its Service and Ingresses
+  api.yaml             the Hono API with the built app, its Service and Ingress
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
 overlays/
@@ -36,7 +36,7 @@ cluster/
 | prod | `ads-prod` | `glossia/ai-dubbing-studio-api:prod` | `glossia.ie` | 7891 TCP, 7892 UDP |
 | local | `ads-local` | `ai-dubbing-studio-api:local` | `ads.localhost` | 7881 TCP, 7882 UDP |
 
-Each overlay sets its host in `BETTER_AUTH_URL` and in both Ingresses. Test and
+Each overlay sets its host in `BETTER_AUTH_URL` and in its Ingresses. Test and
 prod are public through the Cloudflare Tunnel (see
 [Public endpoint](#public-endpoint-cloudflare-tunnel)).
 
@@ -146,7 +146,7 @@ curl https://test.glossia.ie/ready
 # Plain HTTP is redirected: 301 to https://
 curl -sI http://test.glossia.ie | head -n 3
 
-# /internal is refused: 403
+# /internal is refused: 403 (blocked at the Ingress, YGP-71)
 curl -s -o /dev/null -w '%{http_code}\n' https://test.glossia.ie/internal/x
 ```
 
@@ -174,12 +174,6 @@ LiveKit's media (UDP and TCP on 7881/7882 and 7891/7892) can't go through the
 tunnel, which carries only HTTP. It's set up with LiveKit (YGP-68).
 
 ## Things to know
-
-- **`/internal` is refused by Traefik** with 403, on every host. It's only for
-  the translator workers, which call the API inside the cluster (`http://api`).
-  The `api-internal` Ingress and the `deny-all` Middleware in `base/api.yaml` do
-  this. Traefik matches the path as a plain prefix, so paths such as `/internalx`
-  are refused too.
 
 - **Automatic service variables are off** (`enableServiceLinks: false`) in every
   pod. Kubernetes would otherwise add `<SERVICE>_PORT` variables, and a Service

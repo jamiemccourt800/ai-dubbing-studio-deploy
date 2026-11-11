@@ -97,37 +97,3 @@ spec:
               service:
                 name: api
                 port: { name: http }
----
-# /internal is for the translator workers only (ADR-0018). They call the API
-# inside the cluster (http://api), never through Traefik, so Traefik refuses
-# /internal and everything under it, from the internet and the LAN alike.
-# Traefik tries longer paths first, so this wins over the "/" rule above.
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: api-internal
-  annotations:
-    # <namespace>-<middleware>; each overlay sets its own namespace here.
-    traefik.ingress.kubernetes.io/router.middlewares: default-deny-all@kubernetescrd
-spec:
-  rules:
-    - host: ads.localhost
-      http:
-        paths:
-          - path: /internal
-            pathType: Prefix
-            backend:
-              service:
-                name: api
-                port: { name: http }
----
-# Answers 403 to everyone: only 127.0.0.1 is allowed, and no request through
-# Traefik comes from there.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: deny-all
-spec:
-  ipAllowList:
-    sourceRange:
-      - 127.0.0.1/32

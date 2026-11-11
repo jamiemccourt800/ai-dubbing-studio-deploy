@@ -18,17 +18,12 @@ patches:
       - op: replace
         path: /data/BETTER_AUTH_URL
         value: https://glossia.ie
-  # Both Ingresses: the app, and the rule that refuses /internal.
-  - target: { kind: Ingress, name: "api(-internal)?" }
+  # Every Ingress: the app, and the /internal block in front of it (YGP-71).
+  - target: { kind: Ingress }
     patch: |
       - op: replace
         path: /spec/rules/0/host
         value: glossia.ie
-  - target: { kind: Ingress, name: api-internal }
-    patch: |
-      - op: replace
-        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
-        value: ads-prod-deny-all@kubernetescrd
   # Media ports 7891 (TCP) and 7892 (UDP), so production and test can share one
   # node: test keeps the base's 7881 and 7882.
   - target: { kind: ConfigMap, name: livekit-config }

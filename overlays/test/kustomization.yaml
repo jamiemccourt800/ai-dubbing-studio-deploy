@@ -18,14 +18,9 @@ patches:
       - op: replace
         path: /data/BETTER_AUTH_URL
         value: https://test.glossia.ie
-  # Both Ingresses: the app, and the rule that refuses /internal.
-  - target: { kind: Ingress, name: "api(-internal)?" }
+  # Every Ingress: the app, and the /internal block in front of it (YGP-71).
+  - target: { kind: Ingress }
     patch: |
       - op: replace
         path: /spec/rules/0/host
         value: test.glossia.ie
-  - target: { kind: Ingress, name: api-internal }
-    patch: |
-      - op: replace
-        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
-        value: ads-test-deny-all@kubernetescrd
