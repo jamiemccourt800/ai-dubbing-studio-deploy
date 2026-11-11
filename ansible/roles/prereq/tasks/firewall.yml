@@ -29,7 +29,7 @@
     - 10.42.0.0/16
     - 10.43.0.0/16
 
-- name: Open the web and LiveKit media ports
+- name: Open the web ports
   community.general.ufw:
     rule: allow
     port: "{{ item.port }}"

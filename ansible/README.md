@@ -137,7 +137,7 @@ All in `group_vars/all.yml`. Any of them can be set per VM in the inventory.
 | `k3s_node_ip` | the address on the VM's default route | The address K3s uses for the node |
 | `k3s_extra_tls_sans` | none | Extra names for the API certificate |
 | `k3s_lan_cidr` | `10.108.152.0/21` | The LAN, which ufw lets reach the cluster's own ports |
-| `k3s_public_ports` | 80, 443, LiveKit 7881/7882/7891/7892 | Ports opened to everyone |
+| `k3s_public_ports` | 80, 443 | Ports opened to everyone |
 
 ## Firewall
 
@@ -152,7 +152,6 @@ ufw is already active on a VM, it adds:
 | 8472/udp | LAN | flannel (pod network between nodes) |
 | anything | 10.42.0.0/16, 10.43.0.0/16 | K3s's pod and service networks |
 | 80, 443/tcp | anyone | Traefik |
-| 7881, 7891/tcp; 7882, 7892/udp | anyone | LiveKit media for test and prod |
 
 ## How it was tested
 

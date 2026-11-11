@@ -1,0 +1,91 @@
+# LiveKit's public address through the Hetzner relay (YGP-109), for test and
+# prod. A WireGuard sidecar in the LiveKit pod dials out to the relay, which
+# forwards browsers' media and signaling to it through the tunnel. The tunnel
+# follows the pod to whichever node it runs on, and the cluster opens no port.
+#
+# The overlay sets the pod's own tunnel address (WG_ADDRESS) and its rtc ports;
+# the relay's side is ansible/relay.yml.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - wireguard.yaml
+patches:
+  - target: { kind: Deployment, name: livekit }
+    patch: |
+      # Browsers are told to send media to the relay, not to the node.
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0
+        value:
+          name: NODE_IP
+          valueFrom:
+            configMapKeyRef: { name: wireguard, key: RELAY_IP }
+      # Media comes in through the tunnel, so nothing is opened on the node.
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/1/hostPort
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/2/hostPort
+      # The sidecar shares the pod's network. It's a native sidecar (an init
+      # container that keeps running), so LiveKit only starts once wg0 is up:
+      # LiveKit binds its UDP port to the addresses that exist when it starts,
+      # and would never hear media arriving on wg0 otherwise. The pod is only
+      # Ready while the relay answers through the tunnel.
+      - op: add
+        path: /spec/template/spec/initContainers
+        value:
+          - name: wireguard
+            restartPolicy: Always
+            # Pinned to a tag and its digest; no image updater may change it.
+            image: lscr.io/linuxserver/wireguard:1.0.20260223-r0-ls129@sha256:236f9a9a89c701bc83f6d41007157dc77361114d14e56a08e846bb4499622e97
+            command: ["/bin/bash", "/etc/wireguard-sidecar/start.sh"]
+            envFrom:
+              - configMapRef: { name: wireguard }
+            securityContext:
+              capabilities:
+                drop: [ALL]
+                add: [NET_ADMIN]
+            # LiveKit waits for this: the relay must answer through the tunnel.
+            startupProbe:
+              exec:
+                command: ["ping", "-c", "1", "-W", "2", "-I", "wg0", "10.8.0.1"]
+              periodSeconds: 2
+              timeoutSeconds: 3
+              failureThreshold: 150
+            readinessProbe:
+              exec:
+                command: ["ping", "-c", "1", "-W", "2", "-I", "wg0", "10.8.0.1"]
+              periodSeconds: 5
+              timeoutSeconds: 3
+            resources:
+              requests: { cpu: 10m, memory: 16Mi }
+              limits: { memory: 64Mi }
+            volumeMounts:
+              - name: wireguard-script
+                mountPath: /etc/wireguard-sidecar
+              - name: wireguard-key
+                mountPath: /etc/wireguard-key
+                readOnly: true
+              - name: wireguard-run
+                mountPath: /run/wireguard
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: wireguard-script
+          configMap: { name: wireguard-sidecar }
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          # Made by hand on the cluster, never in Git (see README).
+          name: wireguard-key
+          secret: { secretName: wireguard, defaultMode: 0400 }
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: wireguard-run
+          emptyDir: { medium: Memory }
+      # Move off a failed node after 30 seconds instead of 5 minutes, so the
+      # tunnel comes back sooner.
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - { key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
+          - { key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 30 }
