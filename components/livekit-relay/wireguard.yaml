@@ -7,7 +7,7 @@ metadata:
 data:
   # The relay's public IPv4 address: inventory/hosts.yml in ansible/. LiveKit
   # gives it to browsers as its media address.
-  RELAY_IP: 203.0.113.10
+  RELAY_IP: 46.62.226.178
   RELAY_PORT: "51820"
   # Printed by "ansible-playbook relay.yml".
   RELAY_PUBLIC_KEY: REPLACE_WITH_THE_RELAY_PUBLIC_KEY
