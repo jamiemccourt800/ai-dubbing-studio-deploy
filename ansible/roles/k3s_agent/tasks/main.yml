@@ -1,0 +1,77 @@
+---
+- name: Find a running server to join through
+  ansible.builtin.include_role:
+    name: prereq
+    tasks_from: find_server
+
+- name: Refuse to go on without a running server
+  when: prereq_join_server == ''
+  ansible.builtin.fail:
+    msg: No server answers on port 6443. Run site.yml for the servers first.
+
+- name: Check whether this agent is already in the cluster
+  ansible.builtin.stat:
+    path: /etc/rancher/k3s/config.yaml
+  register: k3s_agent_config
+
+# An existing agent keeps the server it joined through: it learns every
+# server's address from it, and reaches whichever is up.
+- name: Read the current config
+  no_log: true  # the token or the admin key would show with -v or --diff
+  when: k3s_agent_config.stat.exists
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/config.yaml
+  register: k3s_agent_current
+
+- name: Read the join token from a running server
+  no_log: true  # the token or the admin key would show with -v or --diff
+  when: not k3s_agent_config.stat.exists
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/token
+  delegate_to: "{{ prereq_join_server }}"
+  register: k3s_agent_token
+
+- name: Keep the join settings this agent already has
+  no_log: true  # the token or the admin key would show with -v or --diff
+  when: k3s_agent_config.stat.exists
+  ansible.builtin.set_fact:
+    k3s_agent_join: >-
+      {{ k3s_agent_current.content | b64decode | from_yaml | dict2items
+         | selectattr('key', 'in', ['server', 'token']) | items2dict }}
+
+- name: Join through the running server
+  no_log: true  # the token or the admin key would show with -v or --diff
+  when: not k3s_agent_config.stat.exists
+  ansible.builtin.set_fact:
+    k3s_agent_join:
+      server: "https://{{ hostvars[prereq_join_server]['ansible_host'] }}:6443"
+      token: "{{ k3s_agent_token.content | b64decode | trim }}"
+
+- name: Write the K3s config
+  no_log: true  # the token or the admin key would show with -v or --diff
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    mode: "0600"
+  notify: Restart k3s-agent
+
+- name: Install K3s
+  ansible.builtin.include_role:
+    name: prereq
+    tasks_from: install
+  vars:
+    prereq_k3s_exec: agent
+
+- name: Apply a changed config now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until this agent is Ready
+  ansible.builtin.command: >-
+    /usr/local/bin/k3s kubectl wait node/{{ inventory_hostname }}
+    --for=condition=Ready --timeout=10s
+  delegate_to: "{{ prereq_join_server }}"
+  register: k3s_agent_ready
+  until: k3s_agent_ready.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: false

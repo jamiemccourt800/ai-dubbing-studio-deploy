@@ -1,0 +1,18 @@
+# Installs or upgrades K3s to k3s_version. Used by k3s_server and k3s_agent,
+# with prereq_k3s_exec set to "server" or "agent". The installer reads the rest from
+# /etc/rancher/k3s/config.yaml, and starts or restarts the service.
+---
+- name: Check which K3s version is installed
+  ansible.builtin.command: /usr/local/bin/k3s --version
+  register: prereq_k3s_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install K3s {{ k3s_version }}
+  when: k3s_version not in prereq_k3s_installed.stdout | default('')
+  ansible.builtin.command: /usr/local/bin/k3s-install.sh
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: "{{ prereq_k3s_exec }}"
+  register: prereq_k3s_installed_now
+  changed_when: true

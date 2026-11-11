@@ -1,11 +1,16 @@
-# Cluster-wide setting for K3s's built-in Traefik (the ingress), applied once per
-# cluster, not per environment.
+# Cluster-wide settings for K3s's built-in Traefik (the ingress), applied once per
+# cluster, not per environment. Both keep each visitor's real address, so the
+# API doesn't put every visitor in one login rate-limit bucket (ADR-0003).
 #
-# By default K3s's load balancer replaces each visitor's address with an address
-# inside the cluster (10.42.0.1), so the API would see every visitor as the same
-# client and put them all in one login rate-limit bucket (ADR-0003). With
-# externalTrafficPolicy: Local, Traefik sees the real address and passes it on in
-# X-Forwarded-For. On a one-node cluster this has no downside.
+# externalTrafficPolicy: Local is for requests that reach Traefik directly on a
+# node (from the LAN). By default K3s's load balancer replaces the visitor's
+# address with one inside the cluster (10.42.0.1). With Local, only the node
+# running Traefik answers on ports 80 and 443.
+#
+# forwardedHeaders.trustedIPs is for requests through the Cloudflare Tunnel
+# (cluster/cloudflared.yaml). They arrive from a cloudflared pod in K3s's pod
+# network, which puts the visitor's address in X-Forwarded-For. Traefik keeps
+# that header only from addresses it trusts; from anyone else it would drop it.
 apiVersion: helm.cattle.io/v1
 kind: HelmChartConfig
 metadata:
@@ -16,3 +21,8 @@ spec:
     service:
       spec:
         externalTrafficPolicy: Local
+    ports:
+      web:
+        forwardedHeaders:
+          trustedIPs:
+            - 10.42.0.0/16

@@ -31,6 +31,7 @@ argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
   image-updater-test.yaml  Image Updater: new "testing" images reach ads-test
+ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
 | Overlay | Namespace | API image | Host name | LiveKit media ports |
@@ -60,6 +61,10 @@ change is a pull request with one approval, both checks must pass, and `main`
 can't be deleted or force-pushed. Nobody can skip these rules.
 
 ## Set up a cluster
+
+The cluster itself, three servers and three agents on the LAN, is built with
+Ansible: see [ansible/README.md](ansible/README.md). It also saves the
+kubeconfig the commands below use.
 
 Once per cluster, before the first deploy:
 
