@@ -1,0 +1,18 @@
+# Sets prereq_join_server: the first server in the inventory, other than this
+# host, whose API answers from here. Empty when none does. Nodes join, read
+# the token and run kubectl through it, so no single server has to be up.
+---
+- name: Find which other servers are up
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[item]['ansible_host'] | default(item) }}"
+    port: 6443
+    timeout: 3
+  loop: "{{ groups['k3s_servers'] | reject('equalto', inventory_hostname) | list }}"
+  register: prereq_servers_up
+  failed_when: false
+
+- name: Pick the first one that answered
+  ansible.builtin.set_fact:
+    prereq_join_server: >-
+      {{ prereq_servers_up.results | selectattr('state', 'defined')
+         | map(attribute='item') | first | default('') }}

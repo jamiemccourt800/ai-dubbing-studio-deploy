@@ -10,7 +10,17 @@ images:
   - name: ai-dubbing-studio-api
     newName: glossia/ai-dubbing-studio-api
     newTag: prod
+  - name: ai-dubbing-studio-translator
+    newName: glossia/ai-dubbing-studio-translator
+    newTag: prod
 patches:
+  # The `prod` tag moves to each new image, so always pull it: with the
+  # default (IfNotPresent) a restarted pod would keep running the old image.
+  - target: { kind: Deployment, name: api }
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Always
   # The /internal block's middleware, in this environment's namespace.
   - target: { kind: Ingress, name: api-internal }
     patch: |

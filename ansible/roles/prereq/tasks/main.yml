@@ -1,0 +1,36 @@
+---
+- name: Install curl
+  ansible.builtin.apt:
+    name: curl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# The installer from the K3s release being installed, not get.k3s.io (always
+# the newest script, run as root). Downloaded again when k3s_version changes.
+- name: Download the K3s installer for {{ k3s_version }}
+  ansible.builtin.get_url:
+    url: https://raw.githubusercontent.com/k3s-io/k3s/{{ k3s_version }}/install.sh
+    dest: /usr/local/bin/k3s-install.sh
+    mode: "0755"
+    force: true
+
+- name: Create the K3s config folder
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: "0755"
+
+# The playbook never turns ufw on (that could lock you out of SSH). It only
+# adds rules when ufw is already active.
+- name: Check whether ufw is active
+  ansible.builtin.command: ufw status
+  register: prereq_ufw
+  changed_when: false
+  failed_when: false
+
+- name: Open the firewall
+  when:
+    - prereq_ufw.rc == 0
+    - "'Status: active' in prereq_ufw.stdout"
+  ansible.builtin.include_tasks: firewall.yml

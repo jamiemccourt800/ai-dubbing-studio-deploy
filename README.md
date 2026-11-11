@@ -21,20 +21,30 @@ base/                  what every environment runs
   api.yaml             the Hono API with the built app, its Service and Ingress,
                        and the Ingress that blocks /internal
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
+  redis.yaml           Redis 8 for the translation jobs, with a 1 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
+  translator.yaml      the translation workers: a warm pool of 2
 overlays/
   test/                namespace ads-test, images tagged "testing"
   prod/                namespace ads-prod, images tagged "prod", media ports 7891/7892
   local/               namespace ads-local, an image you built, for trying it with k3d
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
+argocd/
+  test.yaml            the Argo CD application that keeps ads-test in sync
+  prod.yaml            the same for ads-prod (not applied yet)
+ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
-| Overlay | Namespace | API image | Host name | LiveKit media ports |
+| Overlay | Namespace | Image tag | Host name | LiveKit media ports |
 |---|---|---|---|---|
-| test | `ads-test` | `glossia/ai-dubbing-studio-api:testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
-| prod | `ads-prod` | `glossia/ai-dubbing-studio-api:prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
-| local | `ads-local` | `ai-dubbing-studio-api:local` | `ads.localhost` | 7881 TCP, 7882 UDP |
+| test | `ads-test` | `testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
+| prod | `ads-prod` | `prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
+| local | `ads-local` | `local` (built yourself) | `ads.localhost` | 7881 TCP, 7882 UDP |
+
+The images are `glossia/ai-dubbing-studio-api` and
+`glossia/ai-dubbing-studio-translator` on Docker Hub, built by the app repo's
+Images workflow.
 
 The host names are placeholders until the public endpoint exists (YGP-53). Each
 overlay sets its host in two places: `BETTER_AUTH_URL` and the Ingress.
@@ -58,6 +68,10 @@ can't be deleted or force-pushed. Nobody can skip these rules.
 
 ## Set up a cluster
 
+The cluster itself, three servers and three agents on the LAN, is built with
+Ansible: see [ansible/README.md](ansible/README.md). It also saves the
+kubeconfig the commands below use.
+
 Once per cluster, before the first deploy:
 
 1. **Keep visitors' real addresses.** By default K3s's load balancer replaces
@@ -73,7 +87,7 @@ Once per cluster, before the first deploy:
 
 ## Secrets
 
-Three Secrets per namespace. Use your own random values, for example from
+Five Secrets per namespace. Use your own random values, for example from
 `openssl rand -hex 24`, and different ones for test and prod:
 
 ```bash
@@ -82,6 +96,8 @@ kubectl create namespace $NS
 kubectl -n $NS create secret generic postgres --from-literal=password=<random>
 kubectl -n $NS create secret generic livekit  --from-literal=api-key=<name> --from-literal=api-secret=<at least 32 random characters>
 kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=<at least 32 random characters>
+kubectl -n $NS create secret generic internal --from-literal=token=<at least 32 random characters>
+kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<your Gemini API key>
 ```
 
 | Secret | Keys | Used by |
@@ -89,6 +105,8 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
 | `postgres` | `password` | Postgres, and the API's `DATABASE_URL` |
 | `livekit` | `api-key`, `api-secret` | LiveKit, and the API (rooms and tokens) |
 | `api` | `better-auth-secret` | The API's login cookies. Changing it logs every host out. |
+| `internal` | `token` | The API and the workers, for the workers' `/internal` calls |
+| `translator` | `gemini-api-key` | The workers' Gemini Live API key |
 
 ## Things to know
 
@@ -103,6 +121,9 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
   ports, and why LiveKit restarts with `Recreate` (one pod at a time).
 - **The API restarts a few times on a fresh deploy** until Postgres is ready.
   That's expected: it exits if it can't reach the database, and then stays up.
+- **The workers don't translate real audio yet.** Until they connect to
+  LiveKit (YGP-70), they use their WAV adapter: they start, take jobs and
+  claim tracks, but have no audio to work on.
 - **`/internal` is blocked at the Ingress.** It's the translator workers' API,
   and they call the API's Service directly (`http://api`). Through Traefik,
   `/internal` and everything under it answer `403 Forbidden`: a second
@@ -110,6 +131,55 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
   `127.0.0.1`. Each overlay names the middleware with its namespace
   (`ads-test-deny-internal@kubernetescrd`). To check it on a cluster:
   `curl -i http://ads-test.localhost/internal/tracks/x/claim` should give `403`.
+
+## Argo CD
+
+Argo CD (v3.5.6) runs on the K3s cluster in the `argocd` namespace (YGP-82).
+Each environment is one Argo CD application, in `argocd/`. It points at the
+environment's overlay on `main` and syncs on its own:
+
+- **A merge to `main`** that changes the overlay or `base/` reaches the cluster
+  within about 3 minutes (Argo CD checks Git every 3 minutes).
+- **prune**: a resource removed from Git is deleted from the cluster.
+- **selfHeal**: a change made on the cluster by hand is undone.
+
+The Secrets aren't in Git, so Argo CD doesn't track them and never deletes
+them.
+
+| Application | Overlay | Namespace | Status |
+|---|---|---|---|
+| `ads-test` | `overlays/test` | `ads-test` | Set up |
+| `ads-prod` | `overlays/prod` | `ads-prod` | Written (`argocd/prod.yaml`), not applied: once something reaches the app repo's `main` and the `ads-prod` Secrets exist |
+
+Set up once, after the Secrets exist:
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd --server-side -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.6/manifests/install.yaml
+kubectl apply -f argocd/test.yaml
+```
+
+Check it:
+
+```bash
+kubectl -n argocd get applications     # SYNC STATUS Synced, HEALTH Healthy
+```
+
+To open the Argo CD UI, forward its port and open <https://localhost:8443>
+(user `admin`):
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8443:443
+```
+
+The first password is in the `argocd-initial-admin-secret` Secret. Read it
+yourself (`argocd admin initial-password -n argocd`), and don't paste it into
+chats or tickets.
+
+**Not yet: new images.** The test overlay uses the moving `testing` tag, so
+the manifests don't change when a new image is pushed, and Argo CD doesn't
+notice it. Until that's decided (ADR-0021 in the app repo), restart the API to
+pull the new image: `kubectl -n ads-test rollout restart deploy/api`.
 
 ## Try it on your own machine (k3d)
 
