@@ -31,6 +31,7 @@ overlays/
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
   cloudflared.yaml     once per cluster: the Cloudflare Tunnel, the public endpoint
+  argocd-lan.yaml      once per cluster: the Argo CD UI on the LAN, port 8443
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
@@ -250,16 +251,54 @@ Check it:
 kubectl -n argocd get applications     # SYNC STATUS Synced, HEALTH Healthy
 ```
 
-To open the Argo CD UI, forward its port and open <https://localhost:8443>
-(user `admin`):
+### The Argo CD UI
 
-```bash
-kubectl -n argocd port-forward svc/argocd-server 8443:443
-```
+The UI shows each application's sync and health, every resource it manages,
+and the pods' logs. It's on the LAN at <https://k3s.ads.lan:8443> (user
+`admin`), reached from the LAN or through the Tailscale subnet router, the same
+way as the cluster dashboard (ADR-0024 in the app repo). It isn't public: there
+is no Ingress or Cloudflare record for it. Argo CD serves HTTPS itself with a
+self-signed certificate, so the browser warns the first time.
 
-The first password is in the `argocd-initial-admin-secret` Secret. Read it
-yourself (`argocd admin initial-password -n argocd`), and don't paste it into
-chats or tickets.
+Set up once, after Argo CD is installed. **Change the admin password first**,
+because the address is open to the whole LAN:
+
+1. Forward the port, and open <https://localhost:8443> while it runs:
+
+    ```bash
+    kubectl -n argocd port-forward svc/argocd-server 8443:443
+    ```
+
+2. Log in as `admin` with the first password. Read it yourself in your own
+   terminal, and never paste it into chats or tickets:
+
+    ```bash
+    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+    ```
+
+3. In the UI, open **User Info → Update Password** and set a new one. Then stop
+   the port-forward.
+4. The first password is no longer needed:
+
+    ```bash
+    kubectl -n argocd delete secret argocd-initial-admin-secret
+    ```
+
+5. Open the UI on the LAN:
+
+    ```bash
+    kubectl apply -f cluster/argocd-lan.yaml
+    kubectl -n argocd get svc argocd-server-lan   # EXTERNAL-IP lists the nodes
+    ```
+
+`k3s.ads.lan` comes from your hosts file (see `ansible/README.md`); any node's
+LAN address works too, since every node answers on 8443. If ufw is active on
+the nodes, 8443 needs a rule for the LAN (`k3s_lan_cidr`), like the cluster's
+other own ports.
+
+Without the LAN Service, the UI is still reachable with
+`kubectl -n argocd port-forward svc/argocd-server 8443:443` and
+<https://localhost:8443>.
 
 **Not yet: new images.** The test overlay uses the moving `testing` tag, so
 the manifests don't change when a new image is pushed, and Argo CD doesn't

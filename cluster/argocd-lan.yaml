@@ -1,0 +1,32 @@
+# The Argo CD web UI on the LAN (YGP-82), applied once per cluster after Argo
+# CD is installed. The same approach as the cluster dashboard (ADR-0024 in the
+# app repo): K3s's built-in load balancer (ServiceLB) opens port 8443 on every
+# node, so the team opens https://k3s.ads.lan:8443 from the LAN or through the
+# Tailscale subnet router, with no port-forward.
+#
+# Not public: there's no Ingress and no DNS record at Cloudflare, so the
+# Cloudflare Tunnel (which only goes to Traefik) never carries it.
+#
+# Argo CD serves HTTPS itself (with its own self-signed certificate), so the
+# login crosses the LAN encrypted. The browser warns about the certificate
+# the first time.
+#
+# This is a second Service next to Argo CD's own `argocd-server`, so
+# reinstalling or upgrading Argo CD doesn't undo it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-lan
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server-lan
+    app.kubernetes.io/part-of: argocd
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: argocd-server
+  ports:
+    - name: https
+      port: 8443
+      targetPort: 8080
+      protocol: TCP
