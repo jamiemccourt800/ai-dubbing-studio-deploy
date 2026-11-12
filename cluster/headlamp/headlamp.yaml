@@ -1,0 +1,43 @@
+# Headlamp, the cluster dashboard (YGP-113, ADR-0024 in the app repo), applied
+# once per cluster: kubectl apply -f cluster/headlamp/ (see README.md here).
+#
+# K3s's Helm controller installs the chart from this HelmChart, at the pinned
+# version, into the headlamp namespace. Changing `version` and applying again
+# upgrades it.
+#
+# On the LAN only: the Service is a LoadBalancer on 4466, so K3s's ServiceLB
+# opens 4466 on every node. The team opens http://k3s.ads.lan:4466 (or any
+# node's LAN address) from the LAN or through the Tailscale subnet router.
+# There's no Ingress and no DNS record at Cloudflare, so the Cloudflare Tunnel,
+# which only goes to Traefik, never carries it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: headlamp
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: headlamp
+  namespace: kube-system
+spec:
+  repo: https://kubernetes-sigs.github.io/headlamp/
+  chart: headlamp
+  version: 0.46.0
+  targetNamespace: headlamp
+  valuesContent: |-
+    # The chart would bind Headlamp's own service account to cluster-admin.
+    # It doesn't need it: everyone logs in with their own token, and Headlamp
+    # calls the Kubernetes API with that token, so the token decides what
+    # they can see and do (viewer.yaml).
+    clusterRoleBinding:
+      create: false
+    service:
+      type: LoadBalancer
+      port: 4466
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
