@@ -32,6 +32,8 @@ cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
   cloudflared.yaml     once per cluster: the Cloudflare Tunnel, the public endpoint
   argocd-lan.yaml      once per cluster: the Argo CD UI on the LAN, port 8443
+  headlamp/            once per cluster: Headlamp, the cluster dashboard, on
+                       the LAN, port 4466 (see its README.md)
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
@@ -386,6 +388,22 @@ kubectl -n argocd scale deploy/argocd-image-updater-controller --replicas=1   # 
 
 Without Image Updater, restarting the API pulls the newest `testing` image:
 `kubectl -n ads-test rollout restart deploy/api`.
+
+## Cluster dashboard (Headlamp)
+
+Headlamp shows the workloads in every namespace, pod status and logs, nodes,
+and CPU and memory, in a browser (YGP-113, ADR-0024 in the app repo). Like the
+Argo CD UI, it's on the LAN only, at <http://k3s.ads.lan:4466>, reached from
+the LAN or through the Tailscale subnet router, with a read-only token. Set up
+once:
+
+```bash
+kubectl apply -f cluster/headlamp/
+kubectl -n headlamp create token headlamp-viewer --duration=24h   # paste into the login page
+```
+
+Everything else (what the token can do, upgrading, removing it) is in
+[cluster/headlamp/README.md](cluster/headlamp/README.md).
 
 ## Try it on your own machine (k3d)
 
