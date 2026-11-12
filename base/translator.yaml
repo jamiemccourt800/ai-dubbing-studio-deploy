@@ -1,0 +1,78 @@
+# The translation workers (ADR-0018, ADR-0019), from the app repo's
+# apps/translator/Dockerfile. Each worker takes one job (one language of one
+# session) from Redis, claims its track from the API's /internal routes, and
+# translates it. Idle workers are the warm pool, so a new language starts
+# within a second.
+#
+# Until the worker connects to LiveKit (YGP-70, due by 17 Nov), it uses its WAV
+# adapter: it starts and claims jobs, but has no audio to translate on the
+# cluster.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: translator
+  labels: { app: translator }
+spec:
+  # The warm pool. Scaling on the number of idle workers (ADR-0018) comes later.
+  replicas: 2
+  selector:
+    matchLabels: { app: translator }
+  template:
+    metadata:
+      labels: { app: translator }
+    spec:
+      # See postgres.yaml: no automatic <SERVICE>_PORT variables.
+      enableServiceLinks: false
+      # On SIGTERM a worker gives its track back so another takes it at once;
+      # that takes well under this.
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: translator
+          # The overlays replace the tag (testing, prod, or a local build).
+          image: ai-dubbing-studio-translator
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Only what the worker needs: no database URL or login secrets.
+            - name: REDIS_URL
+              value: redis://redis:6379
+            - name: CONTROL_API_URL
+              value: http://api
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: internal, key: token }
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: translator, key: gemini-api-key }
+            # The worker's id in its claims and logs: the pod's name.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+          # /health: the process is up. /ready: it can take a job.
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 5
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # The WAV adapter's folders, until LiveKit replaces it (YGP-70).
+            - name: media
+              mountPath: /media
+          resources:
+            requests: { cpu: 50m, memory: 48Mi }
+            limits: { memory: 128Mi }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: media
+          emptyDir: {}

@@ -10,6 +10,9 @@ images:
   - name: ai-dubbing-studio-api
     newName: glossia/ai-dubbing-studio-api
     newTag: testing
+  - name: ai-dubbing-studio-translator
+    newName: glossia/ai-dubbing-studio-translator
+    newTag: testing
 patches:
   # The `testing` tag moves to each new image, so always pull it: with the
   # default (IfNotPresent) a restarted pod would keep running the old image.
@@ -18,15 +21,22 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Always
-  # The address browsers use for the test environment. Change both lines when
-  # the public endpoint is set up (YGP-53).
+  # The /internal block's middleware, in this environment's namespace.
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-test-deny-internal@kubernetescrd
+  # The address browsers use for the test environment. Public through the
+  # Cloudflare Tunnel (YGP-92), which serves it over HTTPS.
   - target: { kind: ConfigMap, name: api-config }
     patch: |
       - op: replace
         path: /data/BETTER_AUTH_URL
-        value: http://ads-test.localhost
-  - target: { kind: Ingress, name: api }
+        value: https://test.glossia.ie
+  # Both Ingresses: the API, and the /internal block in front of it.
+  - target: { kind: Ingress }
     patch: |
       - op: replace
         path: /spec/rules/0/host
-        value: ads-test.localhost
+        value: test.glossia.ie

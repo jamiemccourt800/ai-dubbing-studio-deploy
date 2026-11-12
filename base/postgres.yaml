@@ -29,6 +29,16 @@ spec:
       # Don't add Kubernetes' automatic <SERVICE>_PORT variables: a Service called
       # "livekit" would set LIVEKIT_PORT, which LiveKit reads as its own setting.
       enableServiceLinks: false
+      # Start as the image's "postgres" user (uid/gid 70 in the Alpine image)
+      # instead of root. As root, the image's entrypoint switches user with gosu,
+      # and gosu hangs at 100% CPU on kernel 7.0.0-42 (seen on ads-server-a,
+      # 12 Nov). Running as postgres from the start skips gosu on every node.
+      # local-path volumes are world-writable, so uid 70 can create its data
+      # folder; fsGroup covers storage classes that apply it.
+      securityContext:
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
       containers:
         - name: postgres
           # Same version as Docker Compose in the app repo.

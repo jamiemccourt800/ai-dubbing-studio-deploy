@@ -1,5 +1,5 @@
-# For trying the manifests on your own machine with k3d (see README). Uses an
-# API image you built and imported yourself, instead of one from Docker Hub.
+# For trying the manifests on your own machine with k3d (see README). Uses the
+# API and worker images you built and imported yourself, not Docker Hub's.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: ads-local
@@ -9,3 +9,12 @@ resources:
 images:
   - name: ai-dubbing-studio-api
     newTag: local
+  - name: ai-dubbing-studio-translator
+    newTag: local
+patches:
+  # The /internal block's middleware, in this environment's namespace.
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-local-deny-internal@kubernetescrd
