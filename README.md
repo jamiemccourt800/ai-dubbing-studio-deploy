@@ -223,7 +223,9 @@ address. Nothing is opened on the LAN or the cluster for it.
 The tunnel follows the pod. If it moves to another node, the sidecar connects
 again from there and the relay's rules stay the same. LiveKit only starts once
 the tunnel is up (it binds its UDP port to the addresses that exist when it
-starts), and the pod isn't Ready while the relay doesn't answer. If a node
+starts). After that a relay outage doesn't make the pod unready: the API and
+the workers reach LiveKit inside the cluster and keep working, and only
+browsers lose media until the tunnel is back. If a node
 fails, the pod moves after 30 seconds instead of Kubernetes' default 5
 minutes. Calls in progress drop and rejoin when the pod moves.
 
@@ -277,9 +279,6 @@ container, and a third container as the browser:
 - from the browser container, TCP 7881 and UDP 7882 on the relay reached
   LiveKit's sockets in the pod, and LiveKit's 7880 answered `OK` through the
   tunnel; the ports of an environment with no pod running weren't reachable;
-- with WireGuard stopped on the relay, the pod stopped being Ready after 17
-  seconds and the Service stopped sending to it; it was Ready again 4 seconds
-  after WireGuard started;
 - with the pod deleted and its node cordoned, the new pod started on the other
   node and the tunnel was up again 5 seconds after the delete (images already
   on the node), with no change to the relay's rules;
