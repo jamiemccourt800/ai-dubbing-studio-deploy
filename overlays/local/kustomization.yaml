@@ -18,3 +18,10 @@ patches:
       - op: replace
         path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
         value: ads-local-deny-internal@kubernetescrd
+  # k3d's only node is a server, so drop base's agents-only rule here.
+  - target: { kind: Deployment }
+    patch: &anyNode |
+      - op: remove
+        path: /spec/template/spec/affinity
+  - target: { kind: StatefulSet }
+    patch: *anyNode
