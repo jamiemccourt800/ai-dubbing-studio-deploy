@@ -24,7 +24,6 @@ spec:
       images:
         - alias: api
           imageName: glossia/ai-dubbing-studio-api:testing
-        # Only takes effect once the workers are in the manifests (YGP-81).
         - alias: translator
           imageName: glossia/ai-dubbing-studio-translator:testing
 ---
@@ -39,6 +38,19 @@ metadata:
     app.kubernetes.io/name: argocd-image-updater-config
     app.kubernetes.io/part-of: argocd-image-updater-controller
 data:
-  # Check Docker Hub every 5 minutes instead of 2, to stay well inside its
-  # limits for anonymous requests.
-  interval: 5m
+  # Check Docker Hub every 15 minutes instead of 2. Docker Hub allows 100
+  # pulls per 6 hours per public IP without a login (200 with a free one), all
+  # six nodes share one IP, and the nodes' own image pulls count too. Two
+  # images every 15 minutes is at most 48 checks per 6 hours. A webhook from
+  # Docker Hub could replace polling once the tunnel is public (follow-up).
+  interval: 15m
+  # Log in to Docker Hub with a read-only token, for the higher limit. The
+  # Secret is created by hand in the argocd namespace (see README), never in Git.
+  registries.conf: |
+    registries:
+      - name: Docker Hub
+        prefix: docker.io
+        api_url: https://registry-1.docker.io
+        credentials: pullsecret:argocd/dockerhub-pull
+        defaultns: library
+        default: true
