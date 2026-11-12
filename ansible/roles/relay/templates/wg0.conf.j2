@@ -5,9 +5,7 @@ Address = {{ relay_wg_address }}
 ListenPort = {{ relay_wg_port }}
 MTU = {{ relay_wg_mtu }}
 PrivateKey = {{ relay_private_key.content | b64decode | trim }}
-# The forwarding rules only make sense while the tunnel is up.
-PostUp = nft -f /etc/wireguard/relay.nft
-PostDown = nft delete table ip ads_relay
+# No PostUp: the forwarding rules are loaded by ads-relay-nat.service.
 {% for peer in relay_active_peers %}
 
 # {{ peer.name }}: only its own address, so it can't send as another pod.

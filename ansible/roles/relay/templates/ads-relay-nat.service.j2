@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+# LiveKit's forwarding rules on the relay (YGP-109), loaded on their own and
+# not from wg-quick's PostUp: Ubuntu's AppArmor profile for wg-quick confines
+# the nft it starts (wg-quick//nft), and that profile can't read this file.
+# The rules name wg0 by name, so they work before and after it comes up.
+[Unit]
+Description=LiveKit media forwarding into the WireGuard tunnel
+After=network-pre.target nftables.service
+Before=wg-quick@wg0.service
+# Restarting nftables.service flushes every table, so load ours again after it.
+PartOf=nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The file replaces the whole table in one step, so reloading drops nothing.
+ExecStart=/usr/sbin/nft -f /etc/wireguard/relay.nft
+ExecReload=/usr/sbin/nft -f /etc/wireguard/relay.nft
+ExecStop=/usr/sbin/nft delete table ip ads_relay
+
+[Install]
+WantedBy=multi-user.target nftables.service

@@ -6,10 +6,11 @@
     name: wg-quick@wg0
     state: reloaded
 
-# The file replaces the whole table in one step.
+# The file replaces the whole table in one step, so nothing is dropped.
 - name: Reload the forwarding rules
-  ansible.builtin.command: nft -f /etc/wireguard/relay.nft
-  changed_when: true
+  ansible.builtin.systemd_service:
+    name: ads-relay-nat
+    state: reloaded
 
 - name: Reload Caddy
   ansible.builtin.systemd_service:

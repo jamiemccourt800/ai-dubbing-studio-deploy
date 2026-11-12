@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
 # {{ ansible_managed }}
 # LiveKit's media: what arrives on the relay's public address goes through the
-# tunnel to the pod, on the same port (YGP-109). Loaded when wg0 comes up.
+# tunnel to the pod, on the same port (YGP-109). Loaded by ads-relay-nat.service.
 
 # Replace the whole table in one step: create it if it's missing, then delete
 # it and add it again.
