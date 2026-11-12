@@ -30,6 +30,7 @@ overlays/
   local/               namespace ads-local, an image you built, for trying it with k3d
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
+  cloudflared.yaml     once per cluster: the Cloudflare Tunnel, the public endpoint
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
@@ -46,8 +47,9 @@ The images are `glossia/ai-dubbing-studio-api` and
 `glossia/ai-dubbing-studio-translator` on Docker Hub, built by the app repo's
 Images workflow.
 
-The host names are placeholders until the public endpoint exists (YGP-53). Each
-overlay sets its host in two places: `BETTER_AUTH_URL` and the Ingress.
+Each overlay sets its host in `BETTER_AUTH_URL` and in its Ingresses. Test and
+prod are public through the Cloudflare Tunnel (see
+[Public endpoint](#public-endpoint-cloudflare-tunnel)).
 
 Not here yet: Redis and the translation worker pool (ADR-0018). They come with
 the translator work in the app repository.
@@ -74,16 +76,20 @@ kubeconfig the commands below use.
 
 Once per cluster, before the first deploy:
 
-1. **Keep visitors' real addresses.** By default K3s's load balancer replaces
-   them with `10.42.0.1`, so the API would put every visitor in one login
-   rate-limit bucket. `cluster/traefik-config.yaml` tells K3s's Traefik to keep
-   them (`externalTrafficPolicy: Local`):
+1. **Keep visitors' real addresses.** Otherwise the API would put every
+   visitor in one login rate-limit bucket. `cluster/traefik-config.yaml` tells
+   K3s's Traefik to keep them: `externalTrafficPolicy: Local` for requests from
+   the LAN, which K3s's load balancer would otherwise change to `10.42.0.1`, and
+   trusting `X-Forwarded-For` from the pod network for requests through the
+   tunnel:
 
     ```bash
     kubectl apply -f cluster/traefik-config.yaml
     ```
 
 2. **Create each environment's Secrets** (next section).
+3. **Open the public endpoint** (see
+   [Public endpoint](#public-endpoint-cloudflare-tunnel)).
 
 ## Secrets
 
@@ -107,6 +113,85 @@ kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<y
 | `api` | `better-auth-secret` | The API's login cookies. Changing it logs every host out. |
 | `internal` | `token` | The API and the workers, for the workers' `/internal` calls |
 | `translator` | `gemini-api-key` | The workers' Gemini Live API key |
+
+## Public endpoint (Cloudflare Tunnel)
+
+`cluster/cloudflared.yaml` runs two cloudflared pods, on different nodes, that
+keep a tunnel open from the cluster to Cloudflare. Visitors reach `glossia.ie`
+and `test.glossia.ie` at Cloudflare. Cloudflare serves HTTPS with its own
+certificate and renews it, and the tunnel carries every request (WebSockets
+too) to Traefik, which sends each host name to its environment. No port is
+opened on the VMs or the router for this.
+
+Set it up once, from a machine with kubectl access (the relay):
+
+```bash
+# cloudflared, from Cloudflare's apt repository
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt update && sudo apt install -y cloudflared
+
+cloudflared tunnel login                 # opens a link: choose glossia.ie
+cloudflared tunnel create glossia
+cloudflared tunnel route dns glossia glossia.ie
+cloudflared tunnel route dns glossia test.glossia.ie
+
+# The tunnel's token is the only secret: it goes in the cluster, not in Git
+kubectl create namespace cloudflared
+kubectl -n cloudflared create secret generic tunnel --from-literal=token="$(cloudflared tunnel token glossia)"
+kubectl apply -f cluster/cloudflared.yaml
+kubectl -n cloudflared get pods          # both Running and 1/1
+```
+
+`route dns` creates a CNAME record for each name, pointing at the tunnel. It
+fails if the name already has a DNS record; delete that record first. Create the
+tunnel with the CLI as above, not in the Cloudflare dashboard. A dashboard
+tunnel ignores the routes in `cluster/cloudflared.yaml` and takes them from the
+dashboard instead.
+
+In the Cloudflare dashboard, under **SSL/TLS → Edge Certificates**, turn on
+**Always Use HTTPS**, so plain HTTP is redirected to HTTPS.
+
+Cloudflare renews its certificate itself; there is nothing to renew by hand.
+
+### Check it works
+
+Once an environment is deployed:
+
+```bash
+# HTTPS with a valid certificate: {"status":"ok"}
+curl https://test.glossia.ie/ready
+
+# Plain HTTP is redirected: 301 to https://
+curl -sI http://test.glossia.ie | head -n 3
+
+# /internal is refused: 403 (blocked at the Ingress, YGP-71)
+curl -s -o /dev/null -w '%{http_code}\n' https://test.glossia.ie/internal/x
+```
+
+The API has no WebSocket of its own yet, so check WebSockets with a throwaway
+echo server on the test host, then remove it:
+
+```bash
+kubectl -n ads-test create deployment ws-echo --image=jmalloc/echo-server:v0.3.7 --port=8080
+kubectl -n ads-test expose deployment ws-echo --port=80 --target-port=8080
+kubectl -n ads-test create ingress ws-echo --rule="test.glossia.ie/ws-echo=ws-echo:80"
+
+# Expect "HTTP/1.1 101 Switching Protocols"
+curl -si --http1.1 --max-time 5 https://test.glossia.ie/ws-echo \
+  -H "Connection: Upgrade" -H "Upgrade: websocket" \
+  -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" | head -n 1
+
+kubectl -n ads-test delete ingress,service,deployment ws-echo
+```
+
+A new environment needs only its DNS record (`cloudflared tunnel route dns
+glossia <host>`) and its host name in its overlay. The tunnel sends every name
+to Traefik.
+
+LiveKit's media (UDP and TCP on 7881/7882 and 7891/7892) can't go through the
+tunnel, which carries only HTTP. It comes in through the Hetzner relay
+instead (ADR-0023 in the app repo, YGP-109), which isn't part of this setup.
 
 ## Things to know
 

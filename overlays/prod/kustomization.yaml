@@ -27,19 +27,19 @@ patches:
       - op: replace
         path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
         value: ads-prod-deny-internal@kubernetescrd
-  # The address browsers use for production. Change both lines when the public
-  # endpoint is set up (YGP-53).
+  # The address browsers use for production. Public through the Cloudflare
+  # Tunnel (YGP-92), which serves it over HTTPS.
   - target: { kind: ConfigMap, name: api-config }
     patch: |
       - op: replace
         path: /data/BETTER_AUTH_URL
-        value: http://ads.localhost
+        value: https://glossia.ie
   # Both Ingresses: the API, and the /internal block in front of it.
   - target: { kind: Ingress }
     patch: |
       - op: replace
         path: /spec/rules/0/host
-        value: ads.localhost
+        value: glossia.ie
   # Media ports 7891 (TCP) and 7892 (UDP), so production and test can share one
   # node: test keeps the base's 7881 and 7882.
   - target: { kind: ConfigMap, name: livekit-config }
