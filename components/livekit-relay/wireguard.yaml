@@ -11,7 +11,7 @@ data:
   RELAY_IP: 46.62.226.178
   RELAY_PORT: "51820"
   # Printed by "ansible-playbook relay.yml".
-  RELAY_PUBLIC_KEY: REPLACE_WITH_THE_RELAY_PUBLIC_KEY
+  RELAY_PUBLIC_KEY: hIphwpP0Yg8i1tsjubrJap+n/lksFv2yieuNYR2tBgo=
   # This pod's address in the tunnel; the overlay sets it. It must match the
   # environment's tunnel_ip in ansible/group_vars/relay.yml.
   WG_ADDRESS: 10.8.0.2/24
