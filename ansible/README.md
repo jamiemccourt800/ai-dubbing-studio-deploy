@@ -71,7 +71,7 @@ every server's address from the inventory, in a block it keeps up to date:
 
 ```text
 # BEGIN k3s.ads.lan: K3s servers (ai-dubbing-studio-deploy/ansible)
-10.108.159.43 k3s.ads.lan
+10.108.154.190 k3s.ads.lan
 10.108.153.26 k3s.ads.lan
 10.108.159.83 k3s.ads.lan
 # END k3s.ads.lan: K3s servers (ai-dubbing-studio-deploy/ansible)
