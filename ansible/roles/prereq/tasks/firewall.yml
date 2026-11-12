@@ -35,3 +35,17 @@
     port: "{{ item.port }}"
     proto: "{{ item.proto }}"
   loop: "{{ k3s_public_ports }}"
+
+# LiveKit's media used to be opened on the nodes (hostPort). It comes in
+# through the Hetzner relay now (relay.yml), so remove the rules left behind.
+- name: Remove the old LiveKit media rules
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    delete: true
+  loop:
+    - { port: "7881", proto: tcp }
+    - { port: "7882", proto: udp }
+    - { port: "7891", proto: tcp }
+    - { port: "7892", proto: udp }

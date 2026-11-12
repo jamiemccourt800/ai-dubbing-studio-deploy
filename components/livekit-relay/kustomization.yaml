@@ -10,8 +10,40 @@ kind: Component
 resources:
   - wireguard.yaml
 patches:
+  # LiveKit gives browsers the relay's address and must tie it to the tunnel
+  # socket (10.8.0.2), where their media arrives. With only the relay's address
+  # and both sockets, it picked the pod-network one and ignored every browser's
+  # ICE checks coming through wg0. Prod replaces this config with its own ports
+  # and the same lines.
+  - target: { kind: ConfigMap, name: livekit-config }
+    patch: |
+      - op: replace
+        path: /data/livekit.yaml
+        value: |
+          port: 7880
+          rtc:
+            tcp_port: 7881
+            udp_port: 7882
+            use_external_ip: false
+            # Also give out the pod's own address, for clients inside the cluster
+            # (the translation workers): they connect to it directly instead of out
+            # to the relay and back. Browsers can't reach it and use the relay's.
+            advertise_internal_ip: true
+            ips:
+              includes:
+                - 10.8.0.0/24
+                - 10.42.0.0/16
+          logging:
+            level: info
   - target: { kind: Deployment, name: livekit }
     patch: |
+      # The patches below pick entries by position. If base/livekit.yaml is
+      # reordered, these checks fail the render (and CI) instead of patching
+      # the wrong entry.
+      - { op: test, path: /spec/template/spec/containers/0/name, value: livekit }
+      - { op: test, path: /spec/template/spec/containers/0/env/0/name, value: NODE_IP }
+      - { op: test, path: /spec/template/spec/containers/0/ports/1/name, value: rtc-tcp }
+      - { op: test, path: /spec/template/spec/containers/0/ports/2/name, value: rtc-udp }
       # Browsers are told to send media to the relay, not to the node.
       - op: replace
         path: /spec/template/spec/containers/0/env/0
@@ -27,8 +59,11 @@ patches:
       # The sidecar shares the pod's network. It's a native sidecar (an init
       # container that keeps running), so LiveKit only starts once wg0 is up:
       # LiveKit binds its UDP port to the addresses that exist when it starts,
-      # and would never hear media arriving on wg0 otherwise. The pod is only
-      # Ready while the relay answers through the tunnel.
+      # and would never hear media arriving on wg0 otherwise. After that the
+      # tunnel doesn't affect readiness: the in-cluster callers (the API, the
+      # workers) use the livekit Service and don't need the relay, so a relay
+      # blip mustn't take the pod out of it. Browsers' traffic never uses the
+      # Service anyway.
       - op: add
         path: /spec/template/spec/initContainers
         value:
@@ -50,11 +85,6 @@ patches:
               periodSeconds: 2
               timeoutSeconds: 3
               failureThreshold: 150
-            readinessProbe:
-              exec:
-                command: ["ping", "-c", "1", "-W", "2", "-I", "wg0", "10.8.0.1"]
-              periodSeconds: 5
-              timeoutSeconds: 3
             resources:
               requests: { cpu: 10m, memory: 16Mi }
               limits: { memory: 64Mi }

@@ -153,6 +153,9 @@ ufw is already active on a VM, it adds:
 | anything | 10.42.0.0/16, 10.43.0.0/16 | K3s's pod and service networks |
 | 80, 443/tcp | anyone | Traefik |
 
+It also removes the LiveKit media rules (7881, 7891/tcp; 7882, 7892/udp) that
+earlier runs added: LiveKit's media comes in through the relay now.
+
 ## How it was tested
 
 On Docker containers running Ubuntu 24.04 with systemd (three servers, two
