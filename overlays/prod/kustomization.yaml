@@ -69,6 +69,9 @@ patches:
             level: info
   - target: { kind: Deployment, name: livekit }
     patch: |
+      # By position: fail the render if base/livekit.yaml is reordered.
+      - { op: test, path: /spec/template/spec/containers/0/ports/1/name, value: rtc-tcp }
+      - { op: test, path: /spec/template/spec/containers/0/ports/2/name, value: rtc-udp }
       - op: replace
         path: /spec/template/spec/containers/0/ports/1
         value: { name: rtc-tcp, containerPort: 7891, protocol: TCP }

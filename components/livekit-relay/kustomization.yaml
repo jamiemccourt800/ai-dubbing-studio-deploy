@@ -37,6 +37,13 @@ patches:
             level: info
   - target: { kind: Deployment, name: livekit }
     patch: |
+      # The patches below pick entries by position. If base/livekit.yaml is
+      # reordered, these checks fail the render (and CI) instead of patching
+      # the wrong entry.
+      - { op: test, path: /spec/template/spec/containers/0/name, value: livekit }
+      - { op: test, path: /spec/template/spec/containers/0/env/0/name, value: NODE_IP }
+      - { op: test, path: /spec/template/spec/containers/0/ports/1/name, value: rtc-tcp }
+      - { op: test, path: /spec/template/spec/containers/0/ports/2/name, value: rtc-udp }
       # Browsers are told to send media to the relay, not to the node.
       - op: replace
         path: /spec/template/spec/containers/0/env/0
