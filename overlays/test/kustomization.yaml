@@ -17,9 +17,10 @@ images:
     newName: glossia/ai-dubbing-studio-translator
     newTag: testing
 patches:
-  # The `testing` tag moves to each new image, so always pull it: with the
-  # default (IfNotPresent) a restarted pod would keep running the old image.
-  - target: { kind: Deployment, name: api }
+  # The `testing` tags move to each new image, so the API and the workers
+  # always pull them: with the default (IfNotPresent) a new pod on a node that
+  # already has an older image would keep running it.
+  - target: { kind: Deployment, name: "^(api|translator)$" }
     patch: |
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy

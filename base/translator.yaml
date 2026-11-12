@@ -26,8 +26,14 @@ spec:
       # On SIGTERM a worker gives its track back so another takes it at once;
       # that takes well under this.
       terminationGracePeriodSeconds: 15
+      # Run as uid/gid 65532. runAsNonRoot needs a numeric user to check, and
+      # images built before the worker's LiveKit change (YGP-70) say
+      # `USER nonroot` by name, so Kubernetes refuses to start them. 65532 is
+      # that same nonroot user, and the newer images use it by number.
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
       containers:
         - name: translator
           # The overlays replace the tag (testing, prod, or a local build).
