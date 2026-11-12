@@ -204,6 +204,13 @@ instead (ADR-0023 in the app repo, YGP-109), which isn't part of this setup.
 - **LiveKit's media ports are opened on the node** (`hostPort`), and LiveKit
   tells browsers the node's own address. That's why test and prod use different
   ports, and why LiveKit restarts with `Recreate` (one pod at a time).
+- **The app runs only on the agent nodes** (`ads-agent-*`). `base/` gives every
+  Deployment and StatefulSet a node affinity that skips nodes with the
+  `node-role.kubernetes.io/control-plane` label, so the servers are left to
+  run the cluster itself. The agents have plenty of room today (5–7% of their
+  memory used on 12 November); if they ever fill up, new pods wait in
+  `Pending` instead of moving to a server. The local overlay drops the rule,
+  because k3d's only node is a server.
 - **The API restarts a few times on a fresh deploy** until Postgres is ready.
   That's expected: it exits if it can't reach the database, and then stays up.
 - **The workers don't translate real audio yet.** Until they connect to

@@ -11,3 +11,23 @@ resources:
 labels:
   - pairs:
       app.kubernetes.io/part-of: ai-dubbing-studio
+# Run the app only on the agent (worker) nodes. K3s's server nodes run the
+# cluster itself (the Kubernetes API and etcd) and aren't tainted, so without
+# this the scheduler also puts the app's pods on them. Servers carry the
+# node-role.kubernetes.io/control-plane label and agents don't, so no node
+# needs labelling by hand. Every Deployment and StatefulSet here is the app's.
+# The local overlay removes it again: k3d's only node is a server.
+patches:
+  - target: { kind: Deployment }
+    patch: &agentsOnly |
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: node-role.kubernetes.io/control-plane
+                      operator: DoesNotExist
+  - target: { kind: StatefulSet }
+    patch: *agentsOnly
