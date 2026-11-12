@@ -90,6 +90,6 @@
   ansible.builtin.debug:
     msg:
       - "Relay public key (the pods' wireguard ConfigMap): {{ relay_public_key.stdout }}"
-      - "Relay address (the pods' wireguard ConfigMap): {{ ansible_host }}"
+      - "Relay address (the pods' wireguard ConfigMap): {{ relay_public_ip }}"
       - "Peers set up: {{ relay_active_peers | map(attribute='name') | join(', ') or 'none yet' }}"
       - "Peers left out, no public_key yet: {{ relay_peers | selectattr('public_key', 'equalto', '') | map(attribute='name') | join(', ') or 'none' }}"

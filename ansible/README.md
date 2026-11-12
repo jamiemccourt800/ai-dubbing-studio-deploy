@@ -200,11 +200,14 @@ LiveKit a public address without opening any port on the LAN:
 
 ### Set it up
 
-1. Create an Ubuntu VM at Hetzner with your SSH key, and put its public IPv4
-   address in `inventory/hosts.yml` as `ansible_host`.
+1. Create an Ubuntu VM at Hetzner with your SSH key, and add it to Tailscale.
+   In `inventory/hosts.yml`, put its Tailscale address as `ansible_host`
+   (Ansible connects over Tailscale) and its public IPv4 address as
+   `relay_public_ip` (browsers send media there). `relay_public_ip` must match
+   `RELAY_IP` in `components/livekit-relay/wireguard.yaml`.
 2. In Cloudflare's DNS, add an `A` record for each signaling name pointing at
-   that address, with the proxy **off** (grey cloud, "DNS only"), so Caddy can
-   get its certificates.
+   the public address, with the proxy **off** (grey cloud, "DNS only"), so
+   Caddy can get its certificates.
 3. If the VM has a Hetzner Cloud Firewall, allow in UDP 51820, TCP 80 and 443,
    and the media ports in the table.
 4. Run:

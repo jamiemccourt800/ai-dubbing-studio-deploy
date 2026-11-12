@@ -5,8 +5,9 @@ kind: ConfigMap
 metadata:
   name: wireguard
 data:
-  # The relay's public IPv4 address: inventory/hosts.yml in ansible/. LiveKit
-  # gives it to browsers as its media address.
+  # The relay's public IPv4 address: relay_public_ip in ansible/inventory/
+  # hosts.yml (not its Tailscale address). LiveKit gives it to browsers as its
+  # media address.
   RELAY_IP: 46.62.226.178
   RELAY_PORT: "51820"
   # Printed by "ansible-playbook relay.yml".

@@ -8,6 +8,15 @@
   hosts: relay
   become: true
   pre_tasks:
+    - name: The relay needs its public IPv4 address
+      ansible.builtin.assert:
+        that:
+          - relay_public_ip is defined
+          - relay_public_ip is match('^([0-9]{1,3}\.){3}[0-9]{1,3}$')
+        fail_msg: >-
+          Set relay_public_ip for {{ inventory_hostname }} in inventory/hosts.yml:
+          the public IPv4 address browsers send media to.
+
     - name: Each peer needs a tunnel address, and a valid public key or none
       ansible.builtin.assert:
         that:
