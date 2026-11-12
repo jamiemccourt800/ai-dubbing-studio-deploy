@@ -261,7 +261,14 @@ is no Ingress or Cloudflare record for it. Argo CD serves HTTPS itself with a
 self-signed certificate, so the browser warns the first time.
 
 Set up once, after Argo CD is installed. **Change the admin password first**,
-because the address is open to the whole LAN:
+because the address is open to the whole LAN. The commands below are for
+bash; the PowerShell differences are noted. In PowerShell, point kubectl at
+the cluster's kubeconfig with `$HOME`, since PowerShell doesn't expand `~` for
+other programs:
+
+```powershell
+$env:KUBECONFIG = "$HOME\.kube\glossia.yaml"   # this tab only
+```
 
 1. Forward the port, and open <https://localhost:8443> while it runs:
 
@@ -274,6 +281,12 @@ because the address is open to the whole LAN:
 
     ```bash
     kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+    ```
+
+    PowerShell has no `base64` command, so decode it with .NET:
+
+    ```powershell
+    $p = kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}'; [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($p)); Remove-Variable p
     ```
 
 3. In the UI, open **User Info → Update Password** and set a new one. Then stop
