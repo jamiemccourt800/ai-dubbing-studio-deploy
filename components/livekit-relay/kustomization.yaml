@@ -10,6 +10,26 @@ kind: Component
 resources:
   - wireguard.yaml
 patches:
+  # LiveKit gives browsers one address, the relay's, and ties it to one of its
+  # sockets. Limited to the tunnel's addresses, that's the socket media arrives
+  # on: otherwise it picked the pod-network socket and ignored every browser's
+  # ICE checks coming through wg0. Prod replaces this config with its own ports
+  # and the same line.
+  - target: { kind: ConfigMap, name: livekit-config }
+    patch: |
+      - op: replace
+        path: /data/livekit.yaml
+        value: |
+          port: 7880
+          rtc:
+            tcp_port: 7881
+            udp_port: 7882
+            use_external_ip: false
+            ips:
+              includes:
+                - 10.8.0.0/24
+          logging:
+            level: info
   - target: { kind: Deployment, name: livekit }
     patch: |
       # Browsers are told to send media to the relay, not to the node.
