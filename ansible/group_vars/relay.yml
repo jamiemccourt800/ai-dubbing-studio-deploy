@@ -23,7 +23,7 @@ relay_acme_email: ""
 relay_peers:
   - name: ads-test
     tunnel_ip: 10.8.0.2
-    public_key: ""
+    public_key: "0cruGpogM7SQSUfF5whNK+SyDRowdfq5OQ6tlgpG5j0="
     signaling_host: livekit.test.glossia.ie
     media_ports:
       - { port: 7881, proto: tcp }
