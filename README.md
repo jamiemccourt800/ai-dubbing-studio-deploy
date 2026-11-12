@@ -18,7 +18,8 @@ releases. **No secrets are kept here**; they're created on the cluster by hand
 
 ```text
 base/                  what every environment runs
-  api.yaml             the Hono API with the built app, its Service and Ingress
+  api.yaml             the Hono API with the built app, its Service and Ingress,
+                       and the Ingress that blocks /internal
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   redis.yaml           Redis 8 for the translation jobs, with a 1 GB volume
   livekit.yaml         LiveKit, its config, and its media ports on the node
@@ -123,9 +124,13 @@ kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<y
 - **The workers don't translate real audio yet.** Until they connect to
   LiveKit (YGP-70), they use their WAV adapter: they start, take jobs and
   claim tracks, but have no audio to work on.
-- **`/internal` is still reachable through the Ingress**, which sends every
-  path to the API. The workers' token protects it, but it should be blocked
-  at the Ingress (YGP-71, next).
+- **`/internal` is blocked at the Ingress.** It's the translator workers' API,
+  and they call the API's Service directly (`http://api`). Through Traefik,
+  `/internal` and everything under it answer `403 Forbidden`: a second
+  Ingress for that path uses the `deny-internal` middleware, which only allows
+  `127.0.0.1`. Each overlay names the middleware with its namespace
+  (`ads-test-deny-internal@kubernetescrd`). To check it on a cluster:
+  `curl -i http://ads-test.localhost/internal/tracks/x/claim` should give `403`.
 
 ## Argo CD
 
