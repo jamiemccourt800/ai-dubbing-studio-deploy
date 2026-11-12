@@ -31,10 +31,16 @@ jobs:
             echo "::endgroup::"
           done
           cp cluster/*.yaml rendered/
+          # Tools with their own folder (cluster/headlamp/), prefixed so two
+          # files with the same name don't overwrite each other.
+          for file in cluster/*/*.yaml; do
+            cp "$file" "rendered/$(basename "$(dirname "$file")")-$(basename "$file")"
+          done
 
       # kubeconform checks each object against Kubernetes' schemas: misspelled
-      # fields, wrong types, missing required fields. K3s's own HelmChartConfig
-      # has no public schema, so it's skipped rather than failed.
+      # fields, wrong types, missing required fields. K3s's own HelmChart and
+      # HelmChartConfig have no public schema, so they're skipped rather than
+      # failed.
       - name: Validate against the Kubernetes schemas
         run: >-
           docker run --rm -v "$PWD/rendered:/m" ghcr.io/yannh/kubeconform:v0.6.7
