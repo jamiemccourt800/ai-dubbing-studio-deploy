@@ -11,3 +11,10 @@ images:
     newTag: local
   - name: ai-dubbing-studio-translator
     newTag: local
+patches:
+  # The /internal block's middleware, in this environment's namespace.
+  - target: { kind: Ingress, name: api-internal }
+    patch: |
+      - op: replace
+        path: /metadata/annotations/traefik.ingress.kubernetes.io~1router.middlewares
+        value: ads-local-deny-internal@kubernetescrd
