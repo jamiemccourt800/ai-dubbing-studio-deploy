@@ -22,12 +22,14 @@ base/                  what every environment runs
                        and the Ingress that blocks /internal
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   redis.yaml           Redis 8 for the translation jobs, with a 1 GB volume
-  livekit.yaml         LiveKit, its config, and its media ports on the node
+  livekit.yaml         LiveKit and its config
   translator.yaml      the translation workers: a warm pool of 2
 overlays/
   test/                namespace ads-test, images tagged "testing"
   prod/                namespace ads-prod, images tagged "prod", media ports 7891/7892
   local/               namespace ads-local, an image you built, for trying it with k3d
+components/
+  livekit-relay/       test and prod: LiveKit public through the Hetzner relay (WireGuard sidecar)
 cluster/
   traefik-config.yaml  once per cluster: keep visitors' real addresses (see below)
   cloudflared.yaml     once per cluster: the Cloudflare Tunnel, the public endpoint
@@ -36,14 +38,14 @@ argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
   image-updater-test.yaml  Image Updater: new "testing" images reach ads-test
-ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
+ansible/               builds the K3s cluster from the VMs, and the Hetzner relay (see ansible/README.md)
 ```
 
-| Overlay | Namespace | Image tag | Host name | LiveKit media ports |
-|---|---|---|---|---|
-| test | `ads-test` | `testing` | `ads-test.localhost` | 7881 TCP, 7882 UDP |
-| prod | `ads-prod` | `prod` | `ads.localhost` | 7891 TCP, 7892 UDP |
-| local | `ads-local` | `local` (built yourself) | `ads.localhost` | 7881 TCP, 7882 UDP |
+| Overlay | Namespace | Image tag | Host name | LiveKit (browsers) | LiveKit media ports |
+|---|---|---|---|---|---|
+| test | `ads-test` | `testing` | `ads-test.localhost` | `wss://livekit.test.glossia.ie` | 7881 TCP, 7882 UDP, on the relay |
+| prod | `ads-prod` | `prod` | `ads.localhost` | `wss://livekit.glossia.ie` | 7891 TCP, 7892 UDP, on the relay |
+| local | `ads-local` | `local` (built yourself) | `ads.localhost` | none | 7881 TCP, 7882 UDP, on the node |
 
 The images are `glossia/ai-dubbing-studio-api` and
 `glossia/ai-dubbing-studio-translator` on Docker Hub, built by the app repo's
@@ -92,11 +94,14 @@ Once per cluster, before the first deploy:
 2. **Create each environment's Secrets** (next section).
 3. **Open the public endpoint** (see
    [Public endpoint](#public-endpoint-cloudflare-tunnel)).
+4. **Give LiveKit its public address** (see
+   [LiveKit through the Hetzner relay](#livekit-through-the-hetzner-relay)).
 
 ## Secrets
 
-Five Secrets per namespace. Use your own random values, for example from
-`openssl rand -hex 24`, and different ones for test and prod:
+Six Secrets per namespace (five for local, which has no relay). Use your own
+random values, for example from `openssl rand -hex 24`, and different ones for
+test and prod:
 
 ```bash
 NS=ads-test   # or ads-prod
@@ -106,6 +111,7 @@ kubectl -n $NS create secret generic livekit  --from-literal=api-key=<name> --fr
 kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=<at least 32 random characters>
 kubectl -n $NS create secret generic internal --from-literal=token=<at least 32 random characters>
 kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<your Gemini API key>
+kubectl -n $NS create secret generic wireguard --from-file=private-key=<the pod's WireGuard key, see below>
 ```
 
 | Secret | Keys | Used by |
@@ -115,6 +121,7 @@ kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<y
 | `api` | `better-auth-secret` | The API's login cookies. Changing it logs every host out. |
 | `internal` | `token` | The API and the workers, for the workers' `/internal` calls |
 | `translator` | `gemini-api-key` | The workers' Gemini Live API key |
+| `wireguard` | `private-key` | The LiveKit pod's end of the tunnel to the relay (test and prod) |
 
 ## Public endpoint (Cloudflare Tunnel)
 
@@ -193,7 +200,92 @@ to Traefik.
 
 LiveKit's media (UDP and TCP on 7881/7882 and 7891/7892) can't go through the
 tunnel, which carries only HTTP. It comes in through the Hetzner relay
-instead (ADR-0023 in the app repo, YGP-109), which isn't part of this setup.
+instead (ADR-0023 in the app repo), see
+[LiveKit through the Hetzner relay](#livekit-through-the-hetzner-relay).
+
+## LiveKit through the Hetzner relay
+
+Browsers reach LiveKit at a Hetzner VM, the relay, which has a public
+address. Nothing is opened on the LAN or the cluster for it.
+
+- A **WireGuard sidecar** in the LiveKit pod (`components/livekit-relay`)
+  dials out to the relay, and the pod gets an address in the tunnel: test is
+  `10.8.0.2`, prod is `10.8.0.3`, the relay is `10.8.0.1`. Only `10.8.0.1` goes
+  through the tunnel; everything else the pod sends uses the cluster as before.
+- **Signaling**: the API gives browsers `LIVEKIT_PUBLIC_URL`
+  (`wss://livekit.test.glossia.ie`, `wss://livekit.glossia.ie`). Caddy on the
+  relay serves it with a Let's Encrypt certificate and passes it through the
+  tunnel to LiveKit's port 7880.
+- **Media**: LiveKit tells browsers to send media to the relay's address
+  (`--node-ip`). The relay forwards each environment's media ports, UDP and
+  TCP, through the tunnel to its pod.
+
+The tunnel follows the pod. If it moves to another node, the sidecar connects
+again from there and the relay's rules stay the same. LiveKit only starts once
+the tunnel is up (it binds its UDP port to the addresses that exist when it
+starts), and the pod isn't Ready while the relay doesn't answer. If a node
+fails, the pod moves after 30 seconds instead of Kubernetes' default 5
+minutes. Calls in progress drop and rejoin when the pod moves.
+
+### Set it up
+
+For each of test and prod, make the pod's key pair on any machine with
+WireGuard's tools. The private key goes only into the cluster:
+
+```bash
+NS=ads-test   # or ads-prod
+wg genkey > $NS.key
+wg pubkey < $NS.key                       # the public key, for the relay
+kubectl -n $NS create secret generic wireguard --from-file=private-key=$NS.key
+rm $NS.key
+```
+
+Then:
+
+1. Put each public key in `ansible/group_vars/relay.yml` (`public_key` of
+   `ads-test` or `ads-prod`), and set up the relay as in
+   [ansible/README.md](ansible/README.md#the-hetzner-relay). It prints the
+   relay's public key.
+2. Put the relay's address (`RELAY_IP`) and public key (`RELAY_PUBLIC_KEY`) in
+   `components/livekit-relay/wireguard.yaml`, through a pull request.
+3. Once Argo CD has deployed it, check it (below).
+
+The sidecar image is pinned to a tag and its digest. Change it only by hand.
+
+### Check the tunnel
+
+```bash
+NS=ads-test
+kubectl -n $NS get pods -l app=livekit                            # 2/2 Running
+kubectl -n $NS exec deploy/livekit -c wireguard -- wg show        # a recent handshake
+kubectl -n $NS exec deploy/livekit -c wireguard -- ping -c 2 10.8.0.1
+curl https://livekit.test.glossia.ie                              # OK, from LiveKit
+```
+
+On the relay, `wg show` lists the pod as a peer with a recent handshake.
+
+### How the relay path was tested
+
+With K3s v1.37.2 in Docker (two nodes) and the relay playbook run on an Ubuntu
+26.04 container on the same network, the test overlay pointed at that
+container, and a third container as the browser:
+
+- the sidecar's `wg show` had a recent handshake, `ping 10.8.0.1` worked, and
+  the relay listed the pod as its peer; the pod's routes sent only
+  `10.8.0.0/24` through `wg0`;
+- LiveKit gave out the relay's address as its media address;
+- from the browser container, TCP 7881 and UDP 7882 on the relay reached
+  LiveKit's sockets in the pod, and LiveKit's 7880 answered `OK` through the
+  tunnel; the ports of an environment with no pod running weren't reachable;
+- with WireGuard stopped on the relay, the pod stopped being Ready after 17
+  seconds and the Service stopped sending to it; it was Ready again 4 seconds
+  after WireGuard started;
+- with the pod deleted and its node cordoned, the new pod started on the other
+  node and the tunnel was up again 5 seconds after the delete (images already
+  on the node), with no change to the relay's rules;
+- the pod's private key wasn't in the logs or any ConfigMap.
+
+Caddy's certificates weren't tested, because they need the real DNS names.
 
 ## Things to know
 
@@ -203,9 +295,11 @@ instead (ADR-0023 in the app repo, YGP-109), which isn't part of this setup.
   crashes.
 - **The API trusts K3s's pod network** (`TRUSTED_PROXIES=10.42.0.0/16`), where
   Traefik runs, so it believes Traefik's `X-Forwarded-For`.
-- **LiveKit's media ports are opened on the node** (`hostPort`), and LiveKit
-  tells browsers the node's own address. That's why test and prod use different
-  ports, and why LiveKit restarts with `Recreate` (one pod at a time).
+- **LiveKit restarts with `Recreate`** (one pod at a time). In test and prod
+  two pods with the same WireGuard key would fight over the relay's one peer
+  entry; in local the media ports are opened on the node (`hostPort`), and a
+  second pod couldn't start. Test and prod use different media ports because
+  they share the relay's address.
 - **The app runs only on the agent nodes** (`ads-agent-*`). `base/` gives every
   Deployment and StatefulSet a node affinity that skips nodes with the
   `node-role.kubernetes.io/control-plane` label, so the servers are left to

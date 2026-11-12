@@ -1,3 +1,5 @@
 # The cluster's admin credentials (see ansible/README.md)
 ansible/kubeconfig
 .idea/
+# WireGuard private keys made in the checkout (they go into Secrets, never Git)
+*.key

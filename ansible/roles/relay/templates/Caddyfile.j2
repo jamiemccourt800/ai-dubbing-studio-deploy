@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# LiveKit's signaling (wss://), with a Let's Encrypt certificate Caddy gets
+# and renews itself, passed through the tunnel to the pod's port 7880.
+{% if relay_acme_email %}
+{
+	email {{ relay_acme_email }}
+}
+{% endif %}
+{% for peer in relay_active_peers if peer.signaling_host | default('') %}
+
+# {{ peer.name }}
+{{ peer.signaling_host }} {
+	reverse_proxy {{ peer.tunnel_ip }}:7880
+}
+{% endfor %}

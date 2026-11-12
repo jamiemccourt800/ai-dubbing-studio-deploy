@@ -5,6 +5,9 @@ namespace: ads-test
 resources:
   - namespace.yaml
   - ../../base
+components:
+  # LiveKit through the Hetzner relay (YGP-109).
+  - ../../components/livekit-relay
 images:
   # Built and pushed by the app repo's Images workflow (YGP-52).
   - name: ai-dubbing-studio-api
@@ -41,3 +44,10 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: test.glossia.ie
+  # The address browsers connect to LiveKit at: Caddy on the Hetzner relay
+  # (YGP-109). The API gives it to them with their tokens.
+  - target: { kind: ConfigMap, name: api-config }
+    patch: |
+      - op: add
+        path: /data/LIVEKIT_PUBLIC_URL
+        value: wss://livekit.test.glossia.ie

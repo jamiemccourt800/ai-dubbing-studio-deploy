@@ -1,0 +1,37 @@
+# Settings for the Hetzner relay (relay.yml). See README: "The Hetzner relay".
+---
+# WireGuard on the relay. The LiveKit pods connect to this port; it's the only
+# port they need, and they dial out, so the cluster opens nothing.
+relay_wg_port: 51820
+# The relay's address in the tunnel. The pods use the rest of 10.8.0.0/24.
+relay_wg_address: 10.8.0.1/24
+# Low, so WireGuard's packets fit in any path without being fragmented. The
+# pods use the same value.
+relay_wg_mtu: 1280
+
+# The email Let's Encrypt writes to about the signaling certificates. Optional.
+relay_acme_email: ""
+
+# One entry per LiveKit pod (one per environment). Each has:
+#   tunnel_ip       its address in the tunnel (the pod's wireguard ConfigMap)
+#   public_key      its WireGuard public key. Only public keys belong here; the
+#                   private key is a Secret in the cluster. Leave it empty until
+#                   the pod has a key: that peer is then left out.
+#   signaling_host  the name browsers connect to (wss://), served by Caddy with
+#                   a Let's Encrypt certificate and passed on to LiveKit's 7880
+#   media_ports     forwarded unchanged to the pod: the overlay's rtc ports
+relay_peers:
+  - name: ads-test
+    tunnel_ip: 10.8.0.2
+    public_key: "0cruGpogM7SQSUfF5whNK+SyDRowdfq5OQ6tlgpG5j0="
+    signaling_host: livekit.test.glossia.ie
+    media_ports:
+      - { port: 7881, proto: tcp }
+      - { port: 7882, proto: udp }
+  - name: ads-prod
+    tunnel_ip: 10.8.0.3
+    public_key: ""
+    signaling_host: livekit.glossia.ie
+    media_ports:
+      - { port: 7891, proto: tcp }
+      - { port: 7892, proto: udp }

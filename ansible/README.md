@@ -1,4 +1,4 @@
-# Ansible: the K3s cluster
+# Ansible: the K3s cluster and the relay
 
 These playbooks turn Ubuntu VMs on the LAN into one K3s cluster, and add or
 remove VMs later. Each VM is either a **server** (control plane, with an etcd
@@ -137,7 +137,7 @@ All in `group_vars/all.yml`. Any of them can be set per VM in the inventory.
 | `k3s_node_ip` | the address on the VM's default route | The address K3s uses for the node |
 | `k3s_extra_tls_sans` | none | Extra names for the API certificate |
 | `k3s_lan_cidr` | `10.108.152.0/21` | The LAN, which ufw lets reach the cluster's own ports |
-| `k3s_public_ports` | 80, 443, LiveKit 7881/7882/7891/7892 | Ports opened to everyone |
+| `k3s_public_ports` | 80, 443 | Ports opened to everyone |
 
 ## Firewall
 
@@ -152,7 +152,6 @@ ufw is already active on a VM, it adds:
 | 8472/udp | LAN | flannel (pod network between nodes) |
 | anything | 10.42.0.0/16, 10.43.0.0/16 | K3s's pod and service networks |
 | 80, 443/tcp | anyone | Traefik |
-| 7881, 7891/tcp; 7882, 7892/udp | anyone | LiveKit media for test and prod |
 
 ## How it was tested
 
@@ -176,3 +175,92 @@ On the real VMs (Ubuntu 26.04, three servers and three agents), one
 nodes `Ready` and kubectl reaching it through `k3s.ads.lan`.
 
 Not tested yet: kubectl on Windows itself.
+
+## The Hetzner relay
+
+`relay.yml` sets up `hetzner-relay` (the `relay` group in the inventory), a
+Hetzner VM with a public address. It isn't part of the cluster. It gives
+LiveKit a public address without opening any port on the LAN:
+
+- **WireGuard** on UDP 51820, with the relay at `10.8.0.1`. Each LiveKit pod
+  connects out to it and gets its own address in `10.8.0.0/24`.
+- **Media**: UDP and TCP that arrive on the relay's media ports go through the
+  tunnel to the pod, on the same port. The relay sends them in as `10.8.0.1`,
+  because the pod only accepts and answers `10.8.0.1` through the tunnel. Only
+  this media goes into the tunnel, and only its replies come out: the pods
+  can't use the relay to reach the internet or each other.
+- **Signaling**: Caddy serves each peer's `signaling_host` over HTTPS and
+  WebSockets, with a Let's Encrypt certificate it gets and renews itself, and
+  passes it to the pod's port 7880.
+
+| Peer | Tunnel address | Signaling | Media ports |
+|---|---|---|---|
+| `ads-test` | `10.8.0.2` | `livekit.test.glossia.ie` | 7881 TCP, 7882 UDP |
+| `ads-prod` | `10.8.0.3` | `livekit.glossia.ie` | 7891 TCP, 7892 UDP |
+
+### Set it up
+
+1. Create an Ubuntu VM at Hetzner with your SSH key, and add it to Tailscale.
+   In `inventory/hosts.yml`, put its Tailscale address as `ansible_host`
+   (Ansible connects over Tailscale) and its public IPv4 address as
+   `relay_public_ip` (browsers send media there). `relay_public_ip` must match
+   `RELAY_IP` in `components/livekit-relay/wireguard.yaml`.
+2. In Cloudflare's DNS, add an `A` record for each signaling name pointing at
+   the public address, with the proxy **off** (grey cloud, "DNS only"), so
+   Caddy can get its certificates.
+3. If the VM has a Hetzner Cloud Firewall, allow in UDP 51820, TCP 80 and 443,
+   and the media ports in the table.
+4. Run:
+
+    ```bash
+    ansible-playbook relay.yml
+    ```
+
+The last task prints the relay's WireGuard public key and address: both go in
+the cluster. The relay makes its private key itself, the first time, and it
+never leaves the VM.
+
+A peer with an empty `public_key` in `group_vars/relay.yml` is left out, and
+the run says so. Add its public key once the pod has a key pair and run the
+playbook again: the peer is added without dropping the others.
+
+### Relay settings
+
+In `group_vars/relay.yml`:
+
+| Setting | Default | What it is |
+|---|---|---|
+| `relay_wg_port` | `51820` | WireGuard's UDP port |
+| `relay_wg_address` | `10.8.0.1/24` | The relay's address in the tunnel |
+| `relay_wg_mtu` | `1280` | Low, so tunnelled packets aren't fragmented |
+| `relay_acme_email` | none | Optional email for Let's Encrypt |
+| `relay_peers` | test and prod | Each pod: `tunnel_ip`, `public_key`, `signaling_host`, `media_ports` |
+
+The playbook checks that every peer has an address in `10.8.0.2`–`.254`, a valid
+public key or none, and its own address and ports.
+
+Changing `relay_wg_address` or `relay_wg_mtu` needs
+`systemctl restart wg-quick@wg0` on the relay; peers and ports reload by
+themselves.
+
+### Relay firewall
+
+As on the cluster, the playbook never turns ufw on. When ufw is already
+active, it adds:
+
+| Rule | For |
+|---|---|
+| 51820/udp in | WireGuard from the pods |
+| 80, 443/tcp in | Caddy (Let's Encrypt, and the HTTPS redirect) |
+| each peer's media ports, routed from the public interface to `wg0` | media to the pods |
+
+### How the relay was tested
+
+On a Docker container running Ubuntu 26.04 with systemd:
+
+- the first run installed WireGuard, nftables and Caddy, made the key, and
+  started `wg-quick@wg0` and Caddy; a second run changed nothing;
+- with only the test peer's key set, prod was left out and the run said so;
+  adding prod's key added its peer, its forwarding rules and its Caddy site,
+  and kept the test peer;
+- with ufw active, the rules above were added, and a rerun changed nothing.

@@ -1,0 +1,18 @@
+---
+# Adds and removes peers without dropping the ones that stay. A change to
+# relay_wg_address or relay_wg_mtu needs "systemctl restart wg-quick@wg0".
+- name: Reload WireGuard
+  ansible.builtin.systemd_service:
+    name: wg-quick@wg0
+    state: reloaded
+
+# The file replaces the whole table in one step, so nothing is dropped.
+- name: Reload the forwarding rules
+  ansible.builtin.systemd_service:
+    name: ads-relay-nat
+    state: reloaded
+
+- name: Reload Caddy
+  ansible.builtin.systemd_service:
+    name: caddy
+    state: reloaded

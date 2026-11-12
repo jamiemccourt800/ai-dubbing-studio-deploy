@@ -1,0 +1,39 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# LiveKit's media: what arrives on the relay's public address goes through the
+# tunnel to the pod, on the same port (YGP-109). Loaded by ads-relay-nat.service.
+
+# Replace the whole table in one step: create it if it's missing, then delete
+# it and add it again.
+table ip ads_relay
+delete table ip ads_relay
+
+table ip ads_relay {
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+{% for peer in relay_active_peers %}
+{% for media in peer.media_ports %}
+		iifname "{{ relay_public_iface }}" {{ media.proto }} dport {{ media.port }} dnat to {{ peer.tunnel_ip }}  # {{ peer.name }}
+{% endfor %}
+{% endfor %}
+	}
+
+	# The pod only accepts packets from 10.8.0.1 through the tunnel (its
+	# AllowedIPs), and only sends replies for 10.8.0.1 back through it. So the
+	# relay sends media in as 10.8.0.1 and turns the replies back into the
+	# browser's address.
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname "wg0" masquerade
+	}
+
+	# Only the forwarded media goes into the tunnel, and only replies to it come
+	# out. The pods can't use the relay to reach the internet or each other.
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+		ct state established,related accept
+		oifname "wg0" ct status dnat accept
+		iifname "wg0" drop
+		oifname "wg0" drop
+	}
+}

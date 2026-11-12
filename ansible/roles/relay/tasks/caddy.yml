@@ -1,0 +1,29 @@
+---
+# Caddy's own apt repository, as its install guide gives it.
+- name: Add Caddy's apt repository
+  ansible.builtin.deb822_repository:
+    name: caddy-stable
+    uris: https://dl.cloudsmith.io/public/caddy/stable/deb/debian
+    suites: any-version
+    components: main
+    signed_by: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+
+- name: Install Caddy
+  ansible.builtin.apt:
+    name: caddy
+    state: present
+    update_cache: true
+
+- name: Write the Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: /etc/caddy/Caddyfile
+    mode: "0644"
+    validate: caddy validate --adapter caddyfile --config %s
+  notify: Reload Caddy
+
+- name: Start Caddy now and on boot
+  ansible.builtin.systemd_service:
+    name: caddy
+    enabled: true
+    state: started

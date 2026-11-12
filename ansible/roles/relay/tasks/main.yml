@@ -1,0 +1,111 @@
+---
+# python3-debian is what Ansible needs to add Caddy's apt repository.
+- name: Install WireGuard, nftables and python3-debian
+  ansible.builtin.apt:
+    name: [wireguard-tools, nftables, python3-debian]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# The relay passes media from its public address into the tunnel.
+- name: Forward IPv4 packets
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-relay.conf
+    reload: true
+
+- name: Create the WireGuard folder
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: "0700"
+
+# Made once, on the relay. The private key never leaves it; rebuilding the VM
+# makes a new one, and the pods' wireguard ConfigMap needs the new public key.
+- name: Make the relay's WireGuard key
+  ansible.builtin.shell: umask 077 && wg genkey > /etc/wireguard/wg0.key
+  args:
+    creates: /etc/wireguard/wg0.key
+
+- name: Read the relay's private key
+  no_log: true  # it would show with -v
+  ansible.builtin.slurp:
+    src: /etc/wireguard/wg0.key
+  register: relay_private_key
+
+- name: Work out the relay's public key
+  ansible.builtin.command: wg pubkey
+  args:
+    stdin: "{{ relay_private_key.content | b64decode | trim }}"
+  no_log: true  # stdin is the private key
+  register: relay_public_key
+  changed_when: false
+
+- name: Peers that have a public key
+  ansible.builtin.set_fact:
+    relay_active_peers: "{{ relay_peers | rejectattr('public_key', 'equalto', '') | list }}"
+    relay_public_iface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+- name: Write the WireGuard config
+  no_log: true  # it holds the private key
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: /etc/wireguard/wg0.conf
+    mode: "0600"
+  notify: Reload WireGuard
+
+- name: Write the forwarding rules
+  ansible.builtin.template:
+    src: relay.nft.j2
+    dest: /etc/wireguard/relay.nft
+    mode: "0644"
+    validate: nft -c -f %s
+  notify: Reload the forwarding rules
+
+# Its own unit, not wg-quick's PostUp: AppArmor's wg-quick//nft profile
+# doesn't let the nft that wg-quick starts read the rules file.
+- name: Write the unit that loads the forwarding rules
+  ansible.builtin.template:
+    src: ads-relay-nat.service.j2
+    dest: /etc/systemd/system/ads-relay-nat.service
+    mode: "0644"
+  register: relay_nat_unit
+
+- name: Load the forwarding rules now and on boot
+  ansible.builtin.systemd_service:
+    name: ads-relay-nat
+    enabled: true
+    state: started
+    daemon_reload: "{{ relay_nat_unit is changed }}"
+
+- name: Start WireGuard now and on boot
+  ansible.builtin.systemd_service:
+    name: wg-quick@wg0
+    enabled: true
+    state: started
+
+# The playbook never turns ufw on (that could lock you out of SSH). It only
+# adds rules when ufw is already active.
+- name: Check whether ufw is active
+  ansible.builtin.command: ufw status
+  register: relay_ufw
+  changed_when: false
+  failed_when: false
+
+- name: Open the firewall
+  when:
+    - relay_ufw.rc == 0
+    - "'Status: active' in relay_ufw.stdout"
+  ansible.builtin.include_tasks: firewall.yml
+
+- name: Install Caddy
+  ansible.builtin.include_tasks: caddy.yml
+
+- name: Print what goes in the cluster
+  ansible.builtin.debug:
+    msg:
+      - "Relay public key (the pods' wireguard ConfigMap): {{ relay_public_key.stdout }}"
+      - "Relay address (the pods' wireguard ConfigMap): {{ relay_public_ip }}"
+      - "Peers set up: {{ relay_active_peers | map(attribute='name') | join(', ') or 'none yet' }}"
+      - "Peers left out, no public_key yet: {{ relay_peers | selectattr('public_key', 'equalto', '') | map(attribute='name') | join(', ') or 'none' }}"

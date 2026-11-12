@@ -1,0 +1,62 @@
+# The LiveKit pod's end of the tunnel to the Hetzner relay (YGP-109). Only
+# public values are here; the pod's private key is the "wireguard" Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wireguard
+data:
+  # The relay's public IPv4 address: relay_public_ip in ansible/inventory/
+  # hosts.yml (not its Tailscale address). LiveKit gives it to browsers as its
+  # media address.
+  RELAY_IP: 46.62.226.178
+  RELAY_PORT: "51820"
+  # Printed by "ansible-playbook relay.yml".
+  RELAY_PUBLIC_KEY: hIphwpP0Yg8i1tsjubrJap+n/lksFv2yieuNYR2tBgo=
+  # This pod's address in the tunnel; the overlay sets it. It must match the
+  # environment's tunnel_ip in ansible/group_vars/relay.yml.
+  WG_ADDRESS: 10.8.0.2/24
+  # Low, so tunnelled packets aren't fragmented. Same as the relay.
+  WG_MTU: "1280"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wireguard-sidecar
+data:
+  start.sh: |
+    # Brings wg0 up, then waits. The relay is the only peer, and only its
+    # tunnel address (10.8.0.1) goes through the tunnel: the pod's other
+    # traffic never touches the relay.
+    set -euo pipefail
+
+    if ! [[ "$RELAY_PUBLIC_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]]; then
+      echo "RELAY_PUBLIC_KEY in the wireguard ConfigMap isn't a WireGuard key." >&2
+      echo "Set it to the key printed by ansible-playbook relay.yml." >&2
+      exit 1
+    fi
+
+    conf=/run/wireguard/wg0.conf
+    umask 077
+    cat > "$conf" <<EOF
+    [Interface]
+    Address = $WG_ADDRESS
+    MTU = $WG_MTU
+    # The private key is read from the Secret, never written anywhere else.
+    PostUp = wg set %i private-key /etc/wireguard-key/private-key
+
+    [Peer]
+    PublicKey = $RELAY_PUBLIC_KEY
+    Endpoint = $RELAY_IP:$RELAY_PORT
+    AllowedIPs = 10.8.0.1/32
+    # Keeps the connection open through NAT, and tells the relay where the pod
+    # is now after it moves to another node.
+    PersistentKeepalive = 25
+    EOF
+
+    # After a container restart the pod's network still has the old wg0.
+    ip link delete wg0 2>/dev/null || true
+    wg-quick up "$conf"
+
+    trap 'wg-quick down "$conf"; exit 0' TERM INT
+    sleep infinity &
+    wait $!

@@ -5,6 +5,9 @@ namespace: ads-prod
 resources:
   - namespace.yaml
   - ../../base
+components:
+  # LiveKit through the Hetzner relay (YGP-109).
+  - ../../components/livekit-relay
 images:
   # Built and pushed by the app repo's Images workflow (YGP-52).
   - name: ai-dubbing-studio-api
@@ -41,8 +44,8 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: glossia.ie
-  # Media ports 7891 (TCP) and 7892 (UDP), so production and test can share one
-  # node: test keeps the base's 7881 and 7882.
+  # Media ports 7891 (TCP) and 7892 (UDP), so production and test can share the
+  # relay's address: test keeps the base's 7881 and 7882.
   - target: { kind: ConfigMap, name: livekit-config }
     patch: |
       - op: replace
@@ -59,7 +62,20 @@ patches:
     patch: |
       - op: replace
         path: /spec/template/spec/containers/0/ports/1
-        value: { name: rtc-tcp, containerPort: 7891, hostPort: 7891, protocol: TCP }
+        value: { name: rtc-tcp, containerPort: 7891, protocol: TCP }
       - op: replace
         path: /spec/template/spec/containers/0/ports/2
-        value: { name: rtc-udp, containerPort: 7892, hostPort: 7892, protocol: UDP }
+        value: { name: rtc-udp, containerPort: 7892, protocol: UDP }
+  # The address browsers connect to LiveKit at: Caddy on the Hetzner relay
+  # (YGP-109). The API gives it to them with their tokens.
+  - target: { kind: ConfigMap, name: api-config }
+    patch: |
+      - op: add
+        path: /data/LIVEKIT_PUBLIC_URL
+        value: wss://livekit.glossia.ie
+  # Production's address in the tunnel: ads-prod in ansible/group_vars/relay.yml.
+  - target: { kind: ConfigMap, name: wireguard }
+    patch: |
+      - op: replace
+        path: /data/WG_ADDRESS
+        value: 10.8.0.3/24
