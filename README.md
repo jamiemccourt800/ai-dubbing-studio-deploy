@@ -35,6 +35,7 @@ cluster/
 argocd/
   test.yaml            the Argo CD application that keeps ads-test in sync
   prod.yaml            the same for ads-prod (not applied yet)
+  image-updater-test.yaml  Image Updater: new "testing" images reach ads-test
 ansible/               builds the K3s cluster itself from the VMs (see ansible/README.md)
 ```
 
@@ -320,10 +321,71 @@ Without the LAN Service, the UI is still reachable with
 `kubectl -n argocd port-forward svc/argocd-server 8443:443` and
 <https://localhost:8443>.
 
-**Not yet: new images.** The test overlay uses the moving `testing` tag, so
-the manifests don't change when a new image is pushed, and Argo CD doesn't
-notice it. Until that's decided (ADR-0021 in the app repo), restart the API to
-pull the new image: `kubectl -n ads-test rollout restart deploy/api`.
+### New images (Image Updater, test only)
+
+The test overlay uses the moving `testing` tag, so the manifests don't change
+when a new image is pushed, and Argo CD alone wouldn't notice it. **Argo CD
+Image Updater** (v1.3.3) fills that gap for the test environment (ADR-0021
+option A in the app repo): every 15 minutes it checks Docker Hub, and when
+`testing` points to a new image it sets that image's digest on the `ads-test`
+application. Argo CD then rolls the pods onto it. Nothing is written to Git.
+
+Production doesn't use it: `ads-prod` only changes through a reviewed pull
+request here that pins the commit SHA (ADR-0021 option C).
+
+Docker Hub allows 100 pulls per 6 hours per public IP without a login, and 200
+with a free account. All the nodes share one IP, and their own image pulls
+count too, so Image Updater checks only every 15 minutes and logs in with a
+**read-only** Docker Hub access token (create one under Account settings →
+Personal access tokens, "Public Repo Read-only"; not the push token the app
+repo's Images workflow uses).
+
+Set up once, after `argocd/test.yaml`:
+
+```bash
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj-labs/argocd-image-updater/v1.3.3/config/install.yaml
+
+# The read-only token: type it at the prompt so it isn't in your shell history
+read -rs DOCKERHUB_TOKEN
+kubectl -n argocd create secret docker-registry dockerhub-pull \
+  --docker-server=https://registry-1.docker.io \
+  --docker-username=<docker-hub-user> --docker-password="$DOCKERHUB_TOKEN"
+unset DOCKERHUB_TOKEN
+
+kubectl apply -f argocd/image-updater-test.yaml
+kubectl -n argocd rollout restart deploy/argocd-image-updater-controller
+```
+
+The restart makes it read the 15-minute interval and the Docker Hub login
+from `argocd-image-updater-config`.
+
+Check it:
+
+```bash
+kubectl -n argocd get imageupdaters
+kubectl -n argocd logs deploy/argocd-image-updater-controller --since=15m
+```
+
+It only updates an image the application already runs, so the first update
+shows up after `ads-test` has synced once. If the logs show Docker Hub
+refusing requests (too many requests), check the `dockerhub-pull` Secret exists
+and raise the interval.
+
+A Docker Hub webhook could replace the polling (Image Updater has one,
+`--enable-webhook`), but Docker Hub must reach it over HTTPS, so it waits for
+the public endpoint (Cloudflare Tunnel).
+
+**Rolling back on test:** a digest set by Image Updater wins over the tag in
+Git. To pin an older image, pause Image Updater first, then pin, and turn it
+back on after the fix:
+
+```bash
+kubectl -n argocd scale deploy/argocd-image-updater-controller --replicas=0   # pause
+kubectl -n argocd scale deploy/argocd-image-updater-controller --replicas=1   # resume
+```
+
+Without Image Updater, restarting the API pulls the newest `testing` image:
+`kubectl -n ads-test rollout restart deploy/api`.
 
 ## Try it on your own machine (k3d)
 
