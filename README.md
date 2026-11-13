@@ -72,7 +72,29 @@ render, and what it renders must be valid Kubernetes
 
 `main` is protected (`.github/ruleset-main.json`, active on GitHub): every
 change is a pull request with one approval, both checks must pass, and `main`
-can't be deleted or force-pushed. Nobody can skip these rules.
+can't be deleted or force-pushed.
+
+### Urgent changes: merge without waiting
+
+When test is broken or a release has to come back now, waiting for the other
+person's approval costs too much. A repository admin (both of us) can then
+merge the pull request without the approval and checks: tick **Merge without
+waiting for requirements** on the pull request. The ruleset allows this only
+on a pull request, so nobody can push to `main` directly, and the change is
+still in Git history.
+
+Only for two kinds of change:
+
+- **A rollback**: pinning an environment to an earlier image, or setting it
+  back to `testing` (way 2 on the app docs' Deployment page). Branch
+  `rollback/...`.
+- **A fix for a broken test environment**: test is down or a pod can't start,
+  and waiting would block work (as deploy #8, #12 and #14 were on
+  12 November). Branch `fix/...`.
+
+Then tell the other person straight away, and they review the pull request
+afterwards (a review on a merged pull request still shows). Everything else
+waits for an approval, as before.
 
 ## Set up a cluster
 
