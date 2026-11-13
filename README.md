@@ -23,7 +23,7 @@ base/                  what every environment runs
   postgres.yaml        PostgreSQL 18 with a 2 GB volume
   redis.yaml           Redis 8 for the translation jobs, with a 1 GB volume
   livekit.yaml         LiveKit and its config
-  translator.yaml      the translation workers: a warm pool of 2
+  translator.yaml      the translation workers: a fixed pool of 12
 overlays/
   test/                namespace ads-test, images tagged "testing"
   prod/                namespace ads-prod, images tagged "prod", media ports 7891/7892
