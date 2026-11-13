@@ -514,7 +514,7 @@ once:
 
 ```bash
 kubectl apply -f cluster/headlamp/
-kubectl -n headlamp create token headlamp-viewer --duration=24h   # paste into the login page
+kubectl -n headlamp get secret headlamp-viewer-token -o jsonpath='{.data.token}' | base64 -d   # paste into the login page
 ```
 
 Everything else (what the token can do, upgrading, removing it) is in

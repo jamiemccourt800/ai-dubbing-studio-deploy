@@ -10,6 +10,7 @@ Kubernetes Dashboard: ADR-0024 in the app repo (YGP-113).
 |---|---|
 | `headlamp.yaml` | The `headlamp` namespace, and a `HelmChart` that has K3s install the Headlamp chart (0.46.0) with a LAN-only Service on port 4466 |
 | `viewer.yaml` | `headlamp-viewer`, the read-only login: Kubernetes' `view` role, plus reading nodes, namespaces, volumes and storage classes |
+| `viewer-token.yaml` | `headlamp-viewer-token`, a Secret Kubernetes fills with a `headlamp-viewer` token that doesn't expire |
 
 It is **not public**: there is no Ingress and no DNS record at Cloudflare, so
 the Cloudflare Tunnel, which only goes to Traefik, never carries it. K3s's
@@ -36,15 +37,37 @@ On the LAN, or on Tailscale with the subnet router, open
 `ansible/README.md`); any node's LAN address works too, for example
 <http://10.108.159.43:4466>, since every node answers on 4466.
 
-Headlamp asks for a token. Make one that lasts a day, and paste it into the
-login page:
+Headlamp asks for a token. Paste the `headlamp-viewer` token, which doesn't
+expire, so Headlamp keeps you logged in. Kubernetes fills it into the
+`headlamp-viewer-token` Secret a second or two after the apply. Read it with:
 
 ```bash
-kubectl -n headlamp create token headlamp-viewer --duration=24h
+kubectl -n headlamp get secret headlamp-viewer-token -o jsonpath='{.data.token}' | base64 -d
 ```
 
-Treat the token like a password: it's a login to the cluster. Don't paste it
-into chats or tickets. It expires on its own; make a new one when it does.
+In PowerShell:
+
+```powershell
+$b64 = kubectl -n headlamp get secret headlamp-viewer-token -o jsonpath='{.data.token}'
+[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
+```
+
+Treat the token like a password: it's a login to the cluster until it's
+revoked. Keep it in a password manager, and don't paste it into chats or
+tickets.
+
+**Revoking it,** if it leaks or someone leaves the team: delete the Secret,
+and the token stops working at once. Applying the file again makes a new one,
+which everyone then needs.
+
+```bash
+kubectl -n headlamp delete secret headlamp-viewer-token
+kubectl apply -f cluster/headlamp/viewer-token.yaml
+```
+
+For a token that expires instead, for example for one day, run
+`kubectl -n headlamp create token headlamp-viewer --duration=24h`. It can't be
+revoked early.
 
 ## What the viewer can do
 
@@ -68,7 +91,7 @@ you can see and do.
 
 - **Plain HTTP.** Through Tailscale the traffic is encrypted up to the subnet
   router, but it crosses the LAN unencrypted, token included. Accepted for the
-  prototype, since the token is read-only and expires (ADR-0024).
+  prototype, since the token is read-only (ADR-0024).
 - **Anyone on the LAN can open the login page.** Without a token they can't see
   anything.
 - **Upgrading:** change `version` in `headlamp.yaml` and apply it again.
