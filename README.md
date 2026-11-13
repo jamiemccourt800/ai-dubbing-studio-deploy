@@ -77,11 +77,17 @@ can't be deleted or force-pushed.
 ### Urgent changes: merge without waiting
 
 When test is broken or a release has to come back now, waiting for the other
-person's approval costs too much. A repository admin (both of us) can then
-merge the pull request without the approval and checks: tick **Merge without
-waiting for requirements** on the pull request. The ruleset allows this only
-on a pull request, so nobody can push to `main` directly, and the change is
-still in Git history.
+person's approval costs too much. The repository's admin can then merge the
+pull request without the approval and checks: tick **Merge without waiting
+for requirements** on the pull request. The ruleset allows this only on a pull
+request, so nobody can push to `main` directly, and the change is still in Git
+history.
+
+This repository belongs to a personal account, so only its owner (Jamie) is an
+admin; GitHub doesn't let a collaborator be one. When Jamie isn't around,
+Marek rolls back in the Argo CD UI instead (way 3 on the app docs' Deployment
+page: turn off automatic sync, roll back to the last good sync), tells Jamie,
+and the matching pull request follows, so Git catches up with the cluster.
 
 Only for two kinds of change:
 
