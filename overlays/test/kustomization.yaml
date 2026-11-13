@@ -12,10 +12,10 @@ images:
   # Built and pushed by the app repo's Images workflow (YGP-52).
   - name: ai-dubbing-studio-api
     newName: glossia/ai-dubbing-studio-api
-    newTag: testing
+    newTag: 5b35d50cb30caecd4b18a5e2897e585d97cfc669
   - name: ai-dubbing-studio-translator
     newName: glossia/ai-dubbing-studio-translator
-    newTag: testing
+    newTag: 5b35d50cb30caecd4b18a5e2897e585d97cfc669
 patches:
   # The `testing` tags move to each new image, so the API and the workers
   # always pull them: with the default (IfNotPresent) a new pod on a node that
