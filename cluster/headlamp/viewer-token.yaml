@@ -1,0 +1,13 @@
+# A headlamp-viewer token that doesn't expire, so Headlamp stays logged in.
+# The Secret holds no token in Git: Kubernetes fills it in once it's applied.
+# It has the same read-only rights as viewer.yaml gives. Revoking it: delete
+# this Secret, and the token stops working at once; applying it again makes a
+# new one (see README.md here).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: headlamp-viewer-token
+  namespace: headlamp
+  annotations:
+    kubernetes.io/service-account.name: headlamp-viewer
+type: kubernetes.io/service-account-token

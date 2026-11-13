@@ -1,5 +1,5 @@
-# The read-only login for Headlamp (ADR-0024 in the app repo). Its tokens are
-# made by hand and expire (see README.md here); none is stored in Git.
+# The read-only login for Headlamp (ADR-0024 in the app repo). Its token comes
+# from viewer-token.yaml, filled in by Kubernetes; none is stored in Git.
 #
 # Kubernetes' built-in `view` role lets it read workloads, logs and events in
 # every namespace, but not Secrets, and it can't change anything. `view` only
