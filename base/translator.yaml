@@ -13,8 +13,10 @@ metadata:
   name: translator
   labels: { app: translator }
 spec:
-  # The warm pool. Scaling on the number of idle workers (ADR-0018) comes later.
-  replicas: 2
+  # A fixed pool of 12: the Gemini API's free tier allows 12 concurrent
+  # sessions, and nothing scales the workers yet. Scaling on the number of
+  # idle workers (ADR-0018) comes later.
+  replicas: 12
   selector:
     matchLabels: { app: translator }
   template:
