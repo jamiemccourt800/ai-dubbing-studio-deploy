@@ -30,7 +30,7 @@ relay_peers:
       - { port: 7882, proto: udp }
   - name: ads-prod
     tunnel_ip: 10.8.0.3
-    public_key: ""
+    public_key: "A2tw/ulS3D71iJ4J2PlFTgcOtCLSWGN+ro/fA/PBURI="
     signaling_host: livekit.glossia.ie
     media_ports:
       - { port: 7891, proto: tcp }
