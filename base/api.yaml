@@ -74,6 +74,17 @@ spec:
             - name: INTERNAL_API_TOKEN
               valueFrom:
                 secretKeyRef: { name: internal, key: token }
+            # Listener feedback by email (YGP-119). All three or none: without the
+            # `mail` Secret the API starts and POST /api/feedback answers 501.
+            - name: MAIL_USER
+              valueFrom:
+                secretKeyRef: { name: mail, key: user, optional: true }
+            - name: MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: mail, key: password, optional: true }
+            - name: MAIL_TO
+              valueFrom:
+                secretKeyRef: { name: mail, key: to, optional: true }
           # /health: the process is up. /ready: it can also reach Postgres.
           livenessProbe:
             httpGet: { path: /health, port: http }

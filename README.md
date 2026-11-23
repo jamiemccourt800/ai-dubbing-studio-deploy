@@ -129,7 +129,8 @@ Once per cluster, before the first deploy:
 
 ## Secrets
 
-Six Secrets per namespace (five for local, which has no relay). Use your own
+Six Secrets per namespace (five for local, which has no relay), plus an
+optional seventh, `mail`. Use your own
 random values, for example from `openssl rand -hex 24`, and different ones for
 test and prod:
 
@@ -142,6 +143,8 @@ kubectl -n $NS create secret generic api      --from-literal=better-auth-secret=
 kubectl -n $NS create secret generic internal --from-literal=token=<at least 32 random characters>
 kubectl -n $NS create secret generic translator --from-literal=gemini-api-key=<your Gemini API key>
 kubectl -n $NS create secret generic wireguard --from-file=private-key=<the pod's WireGuard key, see below>
+# Optional, for the listener feedback email (use a Gmail app password)
+kubectl -n $NS create secret generic mail --from-literal=user=<gmail address> --from-literal=password=<gmail app password> --from-literal=to=<inbox address>
 ```
 
 | Secret | Keys | Used by |
@@ -152,6 +155,7 @@ kubectl -n $NS create secret generic wireguard --from-file=private-key=<the pod'
 | `internal` | `token` | The API and the workers, for the workers' `/internal` calls |
 | `translator` | `gemini-api-key` | The workers' Gemini Live API key |
 | `wireguard` | `private-key` | The LiveKit pod's end of the tunnel to the relay (test and prod) |
+| `mail` | `user`, `password`, `to` | Optional. The API's listener feedback email: the Gmail address, its app password and the inbox that receives the feedback. Create all three keys or leave the Secret out; without it `POST /api/feedback` answers 501 |
 
 ## Public endpoint (Cloudflare Tunnel)
 
